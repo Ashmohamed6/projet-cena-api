@@ -57,6 +57,7 @@ class PVLigne extends Model
      */
     protected $fillable = [
         'proces_verbal_id',
+        'arrondissement_id',
         'village_quartier_id',
         'centre_vote_id',
         'poste_vote_id',
@@ -162,6 +163,14 @@ class PVLigne extends Model
     {
         return $this->hasMany(PVLigneResultat::class, 'pv_ligne_id');
     }
+
+    /**
+ * Arrondissement (pour PV niveau commune)
+ */
+public function arrondissement(): BelongsTo
+{
+    return $this->belongsTo(Arrondissement::class, 'arrondissement_id');
+}
 
     // ==================== SCOPES ====================
 

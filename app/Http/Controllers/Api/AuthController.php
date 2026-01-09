@@ -12,42 +12,40 @@ use Illuminate\Validation\ValidationException;
 use OpenApi\Annotations as OA;
 
 /**
- * AuthController - RESTRUCTURÉ
- * 
- * ✅ Gestion login/logout
- * ✅ Retour liste élections
- * ✅ Gestion élection active
- * 
- * 
- */
-
-/**
  * @OA\Tag(
- *   name="Auth",
- *   description="Endpoints d'authentification"
- * )
- *
- * @OA\Post(
- *   path="/api/v1/login",
- *   tags={"Auth"},
- *   summary="Connexion utilisateur",
- *   @OA\RequestBody(
- *     required=true,
- *     @OA\JsonContent(
- *       required={"email","password"},
- *       @OA\Property(property="email", type="string", example="admin@cena.bj"),
- *       @OA\Property(property="password", type="string", example="postgres")
- *     )
- *   ),
- *   @OA\Response(response=200, description="OK"),
- *   @OA\Response(response=401, description="Unauthorized"),
- *   @OA\Response(response=422, description="Validation error")
+ * name="Auth",
+ * description="Authentification et gestion du profil utilisateur"
  * )
  */
 class AuthController extends Controller
 {
     /**
-     * ✅ LOGIN - Retourne user + token + affectations + élections
+     * @OA\Post(
+     * path="/api/v1/login",
+     * operationId="login",
+     * tags={"Auth"},
+     * summary="Connexion utilisateur",
+     * description="Authentifie l'utilisateur et retourne un token d'accès",
+     * @OA\RequestBody(
+     * required=true,
+     * @OA\JsonContent(
+     * required={"email", "password"},
+     * @OA\Property(property="email", type="string", format="email", example="admin@cena.bj"),
+     * @OA\Property(property="password", type="string", format="password", example="secret")
+     * )
+     * ),
+     * @OA\Response(
+     * response=200,
+     * description="Connexion réussie",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="message", type="string"),
+     * @OA\Property(property="data", type="object")
+     * )
+     * ),
+     * @OA\Response(response=401, description="Identifiants incorrects"),
+     * @OA\Response(response=403, description="Compte inactif")
+     * )
      */
     public function login(Request $request): JsonResponse
     {
@@ -129,7 +127,7 @@ class AuthController extends Controller
                     } elseif (str_contains($typeNom, 'présidentielle') || str_contains($typeNom, 'presidentielle')) {
                         $type = 'presidentielle';
                     }
-                } elseif ($e->type) {
+                } elseif (isset($e->type)) {
                     // Si colonne type existe (OPTION A)
                     $type = $e->type;
                 } else {
@@ -160,11 +158,11 @@ class AuthController extends Controller
                     'id' => $user->id,
                     'code' => $user->code,
                     'nom' => $user->nom,
-                    'prenom' => $user->prenom, // ✅ Utilise "prenom"
+                    'prenom' => $user->prenom, // ✅ Uniformisé à "prenom"
                     'email' => $user->email,
                     'telephone' => $user->telephone,
                     'photo' => $user->photo,
-                    'statut' => $user->statut, // ✅ Utilise "statut"
+                    'statut' => $user->statut,
                     'derniere_connexion' => $user->derniere_connexion,
                 ],
                 'affectations' => $user->affectations->map(function ($affectation) {
@@ -182,7 +180,7 @@ class AuthController extends Controller
                         ] : null,
                         'niveau_affectation' => $affectation->niveau_affectation,
                         'niveau_affectation_id' => $affectation->niveau_affectation_id,
-                        'actif' => $affectation->actif, // ✅ Utilise "actif"
+                        'actif' => $affectation->actif,
                     ];
                 }),
                 'token' => $token,
@@ -190,8 +188,23 @@ class AuthController extends Controller
             ],
         ]);
     }
+
     /**
-     * ✅ LOGOUT
+     * @OA\Post(
+     * path="/api/v1/logout",
+     * operationId="logout",
+     * tags={"Auth"},
+     * summary="Déconnexion",
+     * security={{"bearerAuth":{}}},
+     * @OA\Response(
+     * response=200,
+     * description="Déconnexion réussie",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="message", type="string", example="Déconnexion réussie")
+     * )
+     * )
+     * )
      */
     public function logout(Request $request): JsonResponse
     {
@@ -216,7 +229,21 @@ class AuthController extends Controller
     }
 
     /**
-     * ✅ ME - Informations utilisateur
+     * @OA\Get(
+     * path="/api/v1/me",
+     * operationId="me",
+     * tags={"Auth"},
+     * summary="Informations de l'utilisateur connecté",
+     * security={{"bearerAuth":{}}},
+     * @OA\Response(
+     * response=200,
+     * description="Détails utilisateur",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="data", type="object")
+     * )
+     * )
+     * )
      */
     public function me(Request $request): JsonResponse
     {
@@ -268,15 +295,29 @@ class AuthController extends Controller
     }
 
     /**
-     * ✅ ELECTIONS - Liste des élections accessibles
+     * @OA\Get(
+     * path="/api/v1/elections",
+     * operationId="getMyElections",
+     * tags={"Auth"},
+     * summary="Liste des élections accessibles",
+     * security={{"bearerAuth":{}}},
+     * @OA\Response(
+     * response=200,
+     * description="Liste des élections",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="data", type="object")
+     * )
+     * )
+     * )
      */
-     public function elections(Request $request): JsonResponse
+    public function elections(Request $request): JsonResponse
     {
         $user = $request->user();
 
         $affectations = $user->affectations()
             ->with(['election', 'election.typeElection'])
-            ->where('actif', true) // ✅ Utilise "actif"
+            ->where('actif', true)
             ->get();
 
         $elections = $affectations
@@ -285,7 +326,6 @@ class AuthController extends Controller
             ->unique('id')
             ->values()
             ->map(function($e) {
-                // Déterminer le type
                 $type = 'legislative';
                 
                 if ($e->typeElection) {
@@ -321,7 +361,14 @@ class AuthController extends Controller
     }
 
     /**
-     * ✅ PERMISSIONS - Permissions de l'utilisateur
+     * @OA\Get(
+     * path="/api/v1/permissions",
+     * operationId="getMyPermissions",
+     * tags={"Auth"},
+     * summary="Permissions de l'utilisateur",
+     * security={{"bearerAuth":{}}},
+     * @OA\Response(response=200, description="Liste des permissions")
+     * )
      */
     public function permissions(Request $request): JsonResponse
     {
@@ -371,15 +418,32 @@ class AuthController extends Controller
     }
 
     /**
-     * ✅ UPDATE PROFILE
+     * @OA\Put(
+     * path="/api/v1/profile",
+     * operationId="updateProfile",
+     * tags={"Auth"},
+     * summary="Mettre à jour le profil",
+     * security={{"bearerAuth":{}}},
+     * @OA\RequestBody(
+     * required=true,
+     * @OA\JsonContent(
+     * @OA\Property(property="nom", type="string"),
+     * @OA\Property(property="prenom", type="string"),
+     * @OA\Property(property="telephone", type="string"),
+     * @OA\Property(property="email", type="string", format="email")
+     * )
+     * ),
+     * @OA\Response(response=200, description="Profil mis à jour")
+     * )
      */
     public function updateProfile(Request $request): JsonResponse
     {
         $user = $request->user();
 
+        // ✅ Harmonisation : 'prenom' au lieu de 'prenoms'
         $validated = $request->validate([
             'nom' => 'sometimes|string|max:200',
-            'prenoms' => 'sometimes|string|max:200',
+            'prenom' => 'sometimes|string|max:200', 
             'telephone' => 'sometimes|nullable|string|max:20',
             'email' => 'sometimes|email|unique:users,email,' . $user->id,
         ]);
@@ -410,7 +474,7 @@ class AuthController extends Controller
                     'id' => $user->id,
                     'code' => $user->code,
                     'nom' => $user->nom,
-                    'prenoms' => $user->prenoms,
+                    'prenom' => $user->prenom, // ✅ "prenom"
                     'email' => $user->email,
                     'telephone' => $user->telephone,
                 ],
@@ -419,7 +483,23 @@ class AuthController extends Controller
     }
 
     /**
-     * ✅ CHANGE PASSWORD
+     * @OA\Post(
+     * path="/api/v1/change-password",
+     * operationId="changePassword",
+     * tags={"Auth"},
+     * summary="Changer le mot de passe",
+     * security={{"bearerAuth":{}}},
+     * @OA\RequestBody(
+     * required=true,
+     * @OA\JsonContent(
+     * required={"current_password", "new_password", "new_password_confirmation"},
+     * @OA\Property(property="current_password", type="string"),
+     * @OA\Property(property="new_password", type="string"),
+     * @OA\Property(property="new_password_confirmation", type="string")
+     * )
+     * ),
+     * @OA\Response(response=200, description="Mot de passe changé")
+     * )
      */
     public function changePassword(Request $request): JsonResponse
     {
@@ -467,7 +547,14 @@ class AuthController extends Controller
     }
 
     /**
-     * ✅ GET ROLES
+     * @OA\Get(
+     * path="/api/v1/roles",
+     * operationId="getRoles",
+     * tags={"Auth"},
+     * summary="Liste des rôles",
+     * security={{"bearerAuth":{}}},
+     * @OA\Response(response=200, description="Liste des rôles")
+     * )
      */
     public function getRoles(): JsonResponse
     {

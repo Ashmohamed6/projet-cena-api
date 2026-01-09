@@ -7,73 +7,69 @@ use Illuminate\Http\{Request, JsonResponse};
 use Illuminate\Support\Facades\DB;
 
 /**
- * AgregationController
- * 
- * Gestion des agrégations de résultats électoraux
+ * @OA\Tag(
+ * name="Agrégations",
+ * description="Gestion et calcul des agrégations de résultats électoraux (National, Circonscription, etc.)"
+ * )
  */
 class AgregationController extends Controller
 {
     /**
-     * Agrégation par niveau géographique
-     * 
-     * GET /api/v1/agregations/{niveau}/{niveauId}
-     * 
      * @OA\Get(
-     *     path="/agregations/{niveau}/{niveauId}",
-     *     tags={"Agrégations"},
-     *     summary="Agrégation par niveau géographique",
-     *     description="Retourne les résultats agrégés pour un niveau géographique spécifique (bureau, arrondissement, commune, circonscription, national)",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="niveau",
-     *         in="path",
-     *         description="Niveau géographique",
-     *         required=true,
-     *         @OA\Schema(type="string", enum={"bureau", "arrondissement", "commune", "circonscription", "national"}, example="circonscription")
-     *     ),
-     *     @OA\Parameter(
-     *         name="niveauId",
-     *         in="path",
-     *         description="ID de l'entité géographique",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Agrégations du niveau",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="niveau", type="string", example="circonscription"),
-     *                 @OA\Property(property="niveau_id", type="integer", example=1),
-     *                 @OA\Property(
-     *                     property="agregations",
-     *                     type="array",
-     *                     @OA\Items(
-     *                         type="object",
-     *                         @OA\Property(property="id", type="integer"),
-     *                         @OA\Property(property="election", type="string"),
-     *                         @OA\Property(property="entite_nom", type="string"),
-     *                         @OA\Property(property="sigle", type="string"),
-     *                         @OA\Property(property="total_voix", type="integer"),
-     *                         @OA\Property(property="pourcentage_exprimes", type="number", format="float"),
-     *                         @OA\Property(property="sieges_obtenus", type="integer"),
-     *                         @OA\Property(property="rang", type="integer")
-     *                     )
-     *                 )
-     *             ),
-     *             @OA\Property(property="count", type="integer")
-     *         )
-     *     ),
-     *     @OA\Response(response=400, description="Niveau invalide"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/agregations/{niveau}/{niveauId}",
+     * operationId="getAgregationsParNiveau",
+     * tags={"Agrégations"},
+     * summary="Agrégation par niveau géographique",
+     * description="Retourne les résultats agrégés pour un niveau spécifique",
+     * @OA\Parameter(
+     * name="niveau",
+     * in="path",
+     * required=true,
+     * description="Niveau géographique",
+     * @OA\Schema(type="string", enum={"bureau", "arrondissement", "commune", "circonscription", "national"})
+     * ),
+     * @OA\Parameter(
+     * name="niveauId",
+     * in="path",
+     * required=true,
+     * description="ID de l'entité géographique",
+     * @OA\Schema(type="integer", example=1)
+     * ),
+     * @OA\Response(
+     * response=200,
+     * description="Agrégations du niveau",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(
+     * property="data",
+     * type="object",
+     * @OA\Property(property="niveau", type="string", example="circonscription"),
+     * @OA\Property(property="niveau_id", type="integer", example=1),
+     * @OA\Property(
+     * property="agregations",
+     * type="array",
+     * @OA\Items(
+     * type="object",
+     * @OA\Property(property="id", type="integer"),
+     * @OA\Property(property="election", type="string"),
+     * @OA\Property(property="entite_nom", type="string"),
+     * @OA\Property(property="sigle", type="string"),
+     * @OA\Property(property="total_voix", type="integer"),
+     * @OA\Property(property="pourcentage_exprimes", type="number", format="float"),
+     * @OA\Property(property="sieges_obtenus", type="integer"),
+     * @OA\Property(property="rang", type="integer")
+     * )
+     * )
+     * ),
+     * @OA\Property(property="count", type="integer")
+     * )
+     * ),
+     * @OA\Response(response=400, description="Niveau invalide"),
+     * @OA\Response(response=404, description="Données non trouvées")
      * )
      */
     public function parNiveau(string $niveau, int $niveauId): JsonResponse
     {
-        // ✅ CORRECTION: Niveaux valides basés sur CHECK constraint
         $niveauxValides = ['bureau', 'arrondissement', 'commune', 'circonscription', 'national'];
         
         if (!in_array($niveau, $niveauxValides)) {
@@ -83,7 +79,6 @@ class AgregationController extends Controller
             ], 400);
         }
 
-        // ✅ CORRECTION: Table 'agregations_calculs' (pas 'agregations_resultats')
         $agregations = DB::table('agregations_calculs as ag')
             ->leftJoin('candidatures as c', 'ag.candidature_id', '=', 'c.id')
             ->leftJoin('entites_politiques as ep', 'c.entite_politique_id', '=', 'ep.id')
@@ -124,66 +119,47 @@ class AgregationController extends Controller
     }
 
     /**
-     * Calculer les agrégations pour une élection
-     * 
-     * POST /api/v1/agregations/calculer/{electionId}
-     * 
      * @OA\Post(
-     *     path="/agregations/calculer/{electionId}",
-     *     tags={"Agrégations"},
-     *     summary="Calculer les agrégations",
-     *     description="Lance le calcul des agrégations pour une élection à différents niveaux géographiques (national, circonscription, etc.)",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="electionId",
-     *         in="path",
-     *         description="ID de l'élection",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\RequestBody(
-     *         required=false,
-     *         @OA\JsonContent(
-     *             @OA\Property(
-     *                 property="niveaux",
-     *                 type="array",
-     *                 @OA\Items(type="string", enum={"national", "circonscription", "commune", "arrondissement", "bureau"}),
-     *                 example={"national", "circonscription"},
-     *                 description="Niveaux à calculer (défaut: national et circonscription)"
-     *             ),
-     *             @OA\Property(
-     *                 property="recalculer",
-     *                 type="boolean",
-     *                 example=false,
-     *                 description="Forcer le recalcul si des agrégations existent déjà"
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Calcul terminé",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="Calcul des agrégations terminé avec succès"),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="election_id", type="integer", example=1),
-     *                 @OA\Property(property="pv_valides", type="integer", example=15456),
-     *                 @OA\Property(property="niveaux_calcules", type="array", @OA\Items(type="string")),
-     *                 @OA\Property(property="details_par_niveau", type="object"),
-     *                 @OA\Property(property="agregations_totales", type="integer", example=192)
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(response=400, description="Aucun PV validé ou agrégations existantes"),
-     *     @OA\Response(response=404, description="Élection non trouvée"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/agregations/calculer/{electionId}",
+     * operationId="calculerAgregations",
+     * tags={"Agrégations"},
+     * summary="Calculer les agrégations",
+     * description="Lance le calcul des agrégations pour une élection",
+     * @OA\Parameter(
+     * name="electionId",
+     * in="path",
+     * required=true,
+     * description="ID de l'élection",
+     * @OA\Schema(type="integer", example=1)
+     * ),
+     * @OA\RequestBody(
+     * required=false,
+     * @OA\JsonContent(
+     * @OA\Property(
+     * property="niveaux",
+     * type="array",
+     * description="Niveaux à calculer (défaut: national et circonscription)",
+     * @OA\Items(type="string", enum={"national", "circonscription", "commune", "arrondissement", "bureau"}),
+     * example={"national", "circonscription"}
+     * ),
+     * @OA\Property(property="recalculer", type="boolean", example=false, description="Forcer le recalcul")
+     * )
+     * ),
+     * @OA\Response(
+     * response=200,
+     * description="Calcul terminé",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="message", type="string"),
+     * @OA\Property(property="data", type="object")
+     * )
+     * ),
+     * @OA\Response(response=400, description="Erreur de calcul ou données manquantes"),
+     * @OA\Response(response=404, description="Élection non trouvée")
      * )
      */
     public function calculer(Request $request, int $electionId): JsonResponse
     {
-        // Vérifier que l'élection existe
         $election = DB::table('elections')->where('id', $electionId)->first();
 
         if (!$election) {
@@ -199,7 +175,6 @@ class AgregationController extends Controller
             'recalculer' => 'sometimes|boolean',
         ]);
 
-        // Niveaux par défaut : national et circonscription
         $niveaux = $validated['niveaux'] ?? ['national', 'circonscription'];
 
         // Récupérer tous les PV validés de cette élection
@@ -239,7 +214,6 @@ class AgregationController extends Controller
 
         $resultats = [];
 
-        // Calculer les agrégations pour chaque niveau demandé
         foreach ($niveaux as $niveau) {
             switch ($niveau) {
                 case 'national':
@@ -255,13 +229,11 @@ class AgregationController extends Controller
                     $resultats['circonscription'] = $nbCalcules;
                     break;
 
-                // Les autres niveaux peuvent être ajoutés ultérieurement
                 default:
                     $resultats[$niveau] = 'Non implémenté';
             }
         }
 
-        // Compter les nouvelles agrégations créées
         $nouvellesAgregations = DB::table('agregations_calculs')
             ->where('election_id', $electionId)
             ->count();
@@ -279,15 +251,8 @@ class AgregationController extends Controller
         ]);
     }
 
-    /**
-     * Calculer les agrégations au niveau national
-     * 
-     * @param int $electionId
-     * @return void
-     */
     private function calculerNiveauNational(int $electionId): void
     {
-        // ✅ CORRECTION: Calculer le total des suffrages exprimés UNE SEULE FOIS pour toute l'élection
         $totauxElection = DB::table('proces_verbaux')
             ->where('election_id', $electionId)
             ->where('statut', 'valide')
@@ -299,13 +264,12 @@ class AgregationController extends Controller
             ')
             ->first();
 
-        // Récupérer toutes les candidatures pour cette élection
         $candidatures = DB::table('candidatures')
             ->where('election_id', $electionId)
             ->get();
 
         foreach ($candidatures as $candidature) {
-            // Calculer seulement le total des voix pour cette candidature
+            // Utilisation de la table 'resultats' cohérente avec ResultatController
             $totalVoix = DB::table('resultats as r')
                 ->join('proces_verbaux as pv', 'r.proces_verbal_id', '=', 'pv.id')
                 ->where('pv.election_id', $electionId)
@@ -313,7 +277,6 @@ class AgregationController extends Controller
                 ->where('r.candidature_id', $candidature->id)
                 ->sum('r.nombre_voix');
 
-            // Calculer les pourcentages
             $pourcentageInscrits = $totauxElection->total_inscrits > 0 
                 ? round(($totalVoix / $totauxElection->total_inscrits) * 100, 2) 
                 : 0;
@@ -322,7 +285,6 @@ class AgregationController extends Controller
                 ? round(($totalVoix / $totauxElection->total_suffrages_exprimes) * 100, 2) 
                 : 0;
 
-            // Insérer l'agrégation
             DB::table('agregations_calculs')->insert([
                 'election_id' => $electionId,
                 'candidature_id' => $candidature->id,
@@ -343,30 +305,20 @@ class AgregationController extends Controller
             ]);
         }
 
-        // Calculer les rangs
         $this->calculerRangs($electionId, 'national', null);
     }
 
-    /**
-     * Calculer les agrégations au niveau circonscription
-     * 
-     * @param int $electionId
-     * @return int Nombre de circonscriptions calculées
-     */
     private function calculerNiveauCirconscription(int $electionId): int
     {
-        // Récupérer toutes les circonscriptions
         $circonscriptions = DB::table('circonscriptions_electorales')->get();
-
         $nbCalcules = 0;
 
         foreach ($circonscriptions as $circonscription) {
-            // ✅ CORRECTION: Calculer les totaux de la circonscription UNE SEULE FOIS
             $totauxCirconscription = DB::table('proces_verbaux as pv')
                 ->join('postes_vote as p', 'pv.niveau_id', '=', 'p.id')
                 ->join('centres_vote as cv', 'p.centre_vote_id', '=', 'cv.id')
                 ->where('pv.election_id', $electionId)
-                ->where('pv.niveau', 'bureau')
+                ->where('pv.niveau', 'bureau') // Hypothèse: les PV viennent des bureaux de vote
                 ->where('pv.statut', 'valide')
                 ->where('cv.circonscription_id', $circonscription->id)
                 ->selectRaw('
@@ -378,18 +330,16 @@ class AgregationController extends Controller
                 ')
                 ->first();
 
-            // Si pas de PV pour cette circonscription, on passe
             if (!$totauxCirconscription || $totauxCirconscription->nb_pv === 0) {
                 continue;
             }
 
-            // Récupérer toutes les candidatures pour cette élection
             $candidatures = DB::table('candidatures')
                 ->where('election_id', $electionId)
                 ->get();
 
             foreach ($candidatures as $candidature) {
-                // Calculer seulement le total des voix pour cette candidature dans cette circonscription
+                // Utilisation de la table 'resultats' cohérente
                 $totalVoix = DB::table('resultats as r')
                     ->join('proces_verbaux as pv', 'r.proces_verbal_id', '=', 'pv.id')
                     ->join('postes_vote as p', 'pv.niveau_id', '=', 'p.id')
@@ -401,13 +351,8 @@ class AgregationController extends Controller
                     ->where('r.candidature_id', $candidature->id)
                     ->sum('r.nombre_voix');
 
-                // Si aucun résultat, passer
-                if ($totalVoix === null || $totalVoix === 0) {
-                    // On crée quand même l'entrée avec 0 voix pour garder la cohérence
-                    $totalVoix = 0;
-                }
+                $totalVoix = $totalVoix ?? 0;
 
-                // Calculer les pourcentages
                 $pourcentageInscrits = $totauxCirconscription->total_inscrits > 0 
                     ? round(($totalVoix / $totauxCirconscription->total_inscrits) * 100, 2) 
                     : 0;
@@ -416,7 +361,6 @@ class AgregationController extends Controller
                     ? round(($totalVoix / $totauxCirconscription->total_suffrages_exprimes) * 100, 2) 
                     : 0;
 
-                // Insérer l'agrégation
                 DB::table('agregations_calculs')->insert([
                     'election_id' => $electionId,
                     'candidature_id' => $candidature->id,
@@ -437,23 +381,13 @@ class AgregationController extends Controller
                 ]);
             }
 
-            // Calculer les rangs pour cette circonscription
             $this->calculerRangs($electionId, 'circonscription', $circonscription->id);
-
             $nbCalcules++;
         }
 
         return $nbCalcules;
     }
 
-    /**
-     * Calculer les rangs des candidatures
-     * 
-     * @param int $electionId
-     * @param string $niveau
-     * @param int|null $niveauId
-     * @return void
-     */
     private function calculerRangs(int $electionId, string $niveau, ?int $niveauId): void
     {
         $query = DB::table('agregations_calculs')
@@ -478,59 +412,40 @@ class AgregationController extends Controller
     }
 
     /**
-     * Résultats nationaux d'une élection
-     * 
-     * GET /api/v1/agregations/election/{electionId}/national
-     * 
      * @OA\Get(
-     *     path="/agregations/election/{electionId}/national",
-     *     tags={"Agrégations"},
-     *     summary="Résultats nationaux",
-     *     description="Retourne les résultats agrégés au niveau national pour une élection",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="electionId",
-     *         in="path",
-     *         description="ID de l'élection",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Résultats nationaux",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="election", type="object"),
-     *                 @OA\Property(
-     *                     property="resultats",
-     *                     type="array",
-     *                     @OA\Items(
-     *                         type="object",
-     *                         @OA\Property(property="entite_nom", type="string"),
-     *                         @OA\Property(property="sigle", type="string"),
-     *                         @OA\Property(property="numero_liste", type="integer"),
-     *                         @OA\Property(property="total_voix", type="integer"),
-     *                         @OA\Property(property="pourcentage_exprimes", type="number", format="float"),
-     *                         @OA\Property(property="sieges_obtenus", type="integer"),
-     *                         @OA\Property(property="rang", type="integer")
-     *                     )
-     *                 ),
-     *                 @OA\Property(
-     *                     property="totaux",
-     *                     type="object",
-     *                     @OA\Property(property="total_voix", type="integer"),
-     *                     @OA\Property(property="total_inscrits", type="integer"),
-     *                     @OA\Property(property="total_votants", type="integer")
-     *                 )
-     *             ),
-     *             @OA\Property(property="count", type="integer")
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="Élection non trouvée"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/agregations/election/{electionId}/national",
+     * operationId="getResultatsNationaux",
+     * tags={"Agrégations"},
+     * summary="Résultats nationaux",
+     * description="Retourne les résultats agrégés au niveau national",
+     * @OA\Parameter(
+     * name="electionId",
+     * in="path",
+     * required=true,
+     * description="ID de l'élection",
+     * @OA\Schema(type="integer", example=1)
+     * ),
+     * @OA\Response(
+     * response=200,
+     * description="Résultats nationaux",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(
+     * property="data",
+     * type="object",
+     * @OA\Property(property="election", type="object"),
+     * @OA\Property(property="resultats", type="array", @OA\Items(type="object")),
+     * @OA\Property(
+     * property="totaux",
+     * type="object",
+     * @OA\Property(property="total_voix", type="integer"),
+     * @OA\Property(property="total_inscrits", type="integer"),
+     * @OA\Property(property="total_votants", type="integer")
+     * )
+     * ),
+     * @OA\Property(property="count", type="integer")
+     * )
+     * )
      * )
      */
     public function national(int $electionId): JsonResponse
@@ -544,7 +459,6 @@ class AgregationController extends Controller
             ], 404);
         }
 
-        // ✅ CORRECTION: Table et colonnes correctes
         $resultats = DB::table('agregations_calculs as ag')
             ->join('candidatures as c', 'ag.candidature_id', '=', 'c.id')
             ->join('entites_politiques as ep', 'c.entite_politique_id', '=', 'ep.id')
@@ -567,7 +481,6 @@ class AgregationController extends Controller
             ->orderBy('ag.rang')
             ->get();
 
-        // Calculer les totaux généraux
         $totaux = DB::table('agregations_calculs')
             ->where('election_id', $electionId)
             ->where('niveau', 'national')
@@ -592,59 +505,21 @@ class AgregationController extends Controller
     }
 
     /**
-     * Résultats par circonscription
-     * 
-     * GET /api/v1/agregations/election/{electionId}/circonscription/{circonscriptionId}
-     * 
      * @OA\Get(
-     *     path="/agregations/election/{electionId}/circonscription/{circonscriptionId}",
-     *     tags={"Agrégations"},
-     *     summary="Résultats par circonscription",
-     *     description="Retourne les résultats agrégés pour une circonscription spécifique",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="electionId",
-     *         in="path",
-     *         description="ID de l'élection",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Parameter(
-     *         name="circonscriptionId",
-     *         in="path",
-     *         description="ID de la circonscription",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Résultats de la circonscription",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="election", type="object"),
-     *                 @OA\Property(property="circonscription", type="object"),
-     *                 @OA\Property(
-     *                     property="resultats",
-     *                     type="array",
-     *                     @OA\Items(
-     *                         type="object",
-     *                         @OA\Property(property="entite_nom", type="string"),
-     *                         @OA\Property(property="sigle", type="string"),
-     *                         @OA\Property(property="total_voix", type="integer"),
-     *                         @OA\Property(property="pourcentage_exprimes", type="number"),
-     *                         @OA\Property(property="sieges_obtenus", type="integer"),
-     *                         @OA\Property(property="rang", type="integer")
-     *                     )
-     *                 )
-     *             ),
-     *             @OA\Property(property="count", type="integer")
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="Élection ou circonscription non trouvée"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/agregations/election/{electionId}/circonscription/{circonscriptionId}",
+     * operationId="getResultatsCirconscription",
+     * tags={"Agrégations"},
+     * summary="Résultats par circonscription",
+     * @OA\Parameter(name="electionId", in="path", required=true, @OA\Schema(type="integer")),
+     * @OA\Parameter(name="circonscriptionId", in="path", required=true, @OA\Schema(type="integer")),
+     * @OA\Response(
+     * response=200,
+     * description="Résultats de la circonscription",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="data", type="object")
+     * )
+     * )
      * )
      */
     public function parCirconscription(int $electionId, int $circonscriptionId): JsonResponse
@@ -669,7 +544,6 @@ class AgregationController extends Controller
             ], 404);
         }
 
-        // ✅ CORRECTION: Table et colonnes correctes
         $resultats = DB::table('agregations_calculs as ag')
             ->join('candidatures as c', 'ag.candidature_id', '=', 'c.id')
             ->join('entites_politiques as ep', 'c.entite_politique_id', '=', 'ep.id')
@@ -705,34 +579,21 @@ class AgregationController extends Controller
     }
 
     /**
-     * Marquer les agrégations comme définitives
-     * 
-     * POST /api/v1/agregations/election/{electionId}/definir
-     * 
      * @OA\Post(
-     *     path="/agregations/election/{electionId}/definir",
-     *     tags={"Agrégations"},
-     *     summary="Marquer comme définitif",
-     *     description="Marque toutes les agrégations d'une élection comme définitives (passage de 'provisoire' à 'definitif')",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="electionId",
-     *         in="path",
-     *         description="ID de l'élection",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Résultats marqués comme définitifs",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="Résultats marqués comme définitifs"),
-     *             @OA\Property(property="nb_agregations", type="integer", example=192, description="Nombre d'agrégations mises à jour")
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="Élection non trouvée"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/agregations/election/{electionId}/definir",
+     * operationId="definirResultats",
+     * tags={"Agrégations"},
+     * summary="Marquer comme définitif",
+     * @OA\Parameter(name="electionId", in="path", required=true, @OA\Schema(type="integer")),
+     * @OA\Response(
+     * response=200,
+     * description="Succès",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="message", type="string"),
+     * @OA\Property(property="nb_agregations", type="integer")
+     * )
+     * )
      * )
      */
     public function definir(int $electionId): JsonResponse
@@ -746,7 +607,6 @@ class AgregationController extends Controller
             ], 404);
         }
 
-        // Mettre à jour toutes les agrégations provisoires en définitif
         $updated = DB::table('agregations_calculs')
             ->where('election_id', $electionId)
             ->where('statut', 'provisoire')
@@ -763,53 +623,20 @@ class AgregationController extends Controller
     }
 
     /**
-     * Statistiques générales d'une élection
-     * 
-     * GET /api/v1/agregations/election/{electionId}/statistiques
-     * 
      * @OA\Get(
-     *     path="/agregations/election/{electionId}/statistiques",
-     *     tags={"Agrégations"},
-     *     summary="Statistiques d'une élection",
-     *     description="Retourne les statistiques complètes d'une élection (PV, agrégations, etc.)",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="electionId",
-     *         in="path",
-     *         description="ID de l'élection",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Statistiques de l'élection",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="election", type="object"),
-     *                 @OA\Property(
-     *                     property="pv",
-     *                     type="object",
-     *                     @OA\Property(property="total_pv", type="integer", example=15500),
-     *                     @OA\Property(property="pv_valides", type="integer", example=15456),
-     *                     @OA\Property(property="pv_litigieux", type="integer", example=30),
-     *                     @OA\Property(property="pv_brouillon", type="integer", example=14)
-     *                 ),
-     *                 @OA\Property(
-     *                     property="agregations",
-     *                     type="object",
-     *                     @OA\Property(property="total_agregations", type="integer", example=192),
-     *                     @OA\Property(property="nb_niveaux", type="integer", example=2),
-     *                     @OA\Property(property="provisoires", type="integer", example=0),
-     *                     @OA\Property(property="definitifs", type="integer", example=192)
-     *                 )
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="Élection non trouvée"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/agregations/election/{electionId}/statistiques",
+     * operationId="getStatistiquesGlobales",
+     * tags={"Agrégations"},
+     * summary="Statistiques d'une élection",
+     * @OA\Parameter(name="electionId", in="path", required=true, @OA\Schema(type="integer")),
+     * @OA\Response(
+     * response=200,
+     * description="Statistiques récupérées",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="data", type="object")
+     * )
+     * )
      * )
      */
     public function statistiques(int $electionId): JsonResponse
@@ -823,7 +650,6 @@ class AgregationController extends Controller
             ], 404);
         }
 
-        // Statistiques des PV
         $statsPv = DB::table('proces_verbaux')
             ->where('election_id', $electionId)
             ->selectRaw('
@@ -834,7 +660,6 @@ class AgregationController extends Controller
             ')
             ->first();
 
-        // Agrégations disponibles
         $statsAgregations = DB::table('agregations_calculs')
             ->where('election_id', $electionId)
             ->selectRaw('

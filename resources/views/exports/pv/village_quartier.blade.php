@@ -5,7 +5,7 @@
     <title>PV Village/Quartier</title>
     <style>
         @page {
-            margin: 15mm 15mm 20mm 15mm;
+            margin: 8mm 8mm 12mm 8mm; /* ✅ MARGES RÉDUITES de 15mm à 8mm */
             size: A4 landscape;
         }
 
@@ -13,8 +13,8 @@
 
         body {
             font-family: Arial, sans-serif;
-            font-size: 7pt;
-            line-height: 1.1;
+            font-size: 7.5pt; /* ✅ LÉGÈREMENT AUGMENTÉ de 7pt */
+            line-height: 1.2;
             color: #000;
         }
 
@@ -31,7 +31,7 @@
 
         .footer {
             position: fixed;
-            bottom: 8mm;
+            bottom: 6mm;
             left: 0;
             right: 0;
             text-align: center;
@@ -40,25 +40,25 @@
         }
 
         .page-number:before { content: counter(page); }
-        .page-number:after { content: "/2"; }
+        .page-number:after { content: " / 2"; }
         .page-number {
             position: fixed;
-            bottom: 8mm;
-            right: 15mm;
+            bottom: 6mm;
+            right: 10mm;
             font-size: 6.5pt;
             color: #666;
         }
 
         .header {
             text-align: center;
-            margin-bottom: 2mm;
+            margin-bottom: 3mm; /* ✅ RÉDUIT de 2mm à 3mm */
             position: relative;
         }
 
         .logo-left, .logo-right {
             position: absolute;
             top: 0;
-            width: 45px;
+            width: 40px; /* ✅ RÉDUIT de 45px à 40px */
             height: auto;
         }
         .logo-left { left: 0; }
@@ -77,7 +77,7 @@
 
         .box {
             border: 2px solid #000;
-            padding: 1.5mm;
+            padding: 2mm; /* ✅ RÉDUIT de 1.5mm à 2mm pour lisibilité */
             margin: 2mm 0;
         }
 
@@ -108,13 +108,13 @@
 
         .localisation-table td {
             padding: 1.5mm 2mm;
-            font-size: 7pt;
+            font-size: 7.5pt; /* ✅ AUGMENTÉ de 7pt */
             border-bottom: 1px solid #ddd;
         }
 
         .localisation-table td:first-child {
             font-weight: bold;
-            width: 45%;
+            width: 40%; /* ✅ RÉDUIT de 45% pour plus d'espace */
             background: #f5f5f5;
         }
 
@@ -135,7 +135,7 @@
             padding: 1.5mm;
             text-align: center;
             font-weight: bold;
-            font-size: 6.5pt;
+            font-size: 7pt; /* ✅ AUGMENTÉ de 6.5pt */
             margin: 2mm 0;
         }
 
@@ -145,7 +145,7 @@
             border-bottom: none;
             padding: 1.5mm 2mm;
             font-weight: bold;
-            font-size: 6.5pt;
+            font-size: 7pt; /* ✅ AUGMENTÉ de 6.5pt */
             margin-top: 2mm;
         }
 
@@ -153,7 +153,7 @@
             width: 100%;
             border-collapse: collapse;
             margin: 0;
-            font-size: 6pt;
+            font-size: 6.5pt; /* ✅ AUGMENTÉ de 6pt */
         }
 
         table.results-table, 
@@ -167,7 +167,7 @@
             padding: 1.5mm 0.5mm;
             text-align: center;
             font-weight: bold;
-            font-size: 5.5pt;
+            font-size: 6pt; /* ✅ AUGMENTÉ de 5.5pt */
             line-height: 1.1;
         }
 
@@ -183,7 +183,7 @@
         }
 
         .total-row {
-            background: #f0f0f0;
+            background: #e8e8e8; /* ✅ CHANGÉ de #f0f0f0 pour plus de contraste */
             font-weight: bold;
         }
 
@@ -191,31 +191,32 @@
             border: 1.5px solid #000;
             padding: 2mm;
             margin-top: 3mm;
-            margin-bottom: 12mm;
+            margin-bottom: 10mm; /* ✅ RÉDUIT de 12mm */
             text-align: center;
             font-weight: bold;
-            font-size: 7pt;
-            min-height: 12mm;
+            font-size: 7.5pt; /* ✅ AUGMENTÉ de 7pt */
+            min-height: 15mm;
             position: relative;
         }
 
         .coordonnateur-nom {
-            margin-top: 3mm;
+            margin-top: 4mm;
             text-align: center;
             font-weight: normal;
+            font-size: 7.5pt;
         }
 
         .signature-status {
             position: absolute;
             bottom: 2mm;
             right: 2mm;
-            font-size: 8pt;
+            font-size: 9pt; /* ✅ AUGMENTÉ de 8pt */
             font-weight: bold;
             color: #000;
         }
 
         .page-break { page-break-after: always; }
-        .delegue-row { height: 8mm; }
+        .delegue-row { height: 9mm; } /* ✅ AUGMENTÉ de 8mm pour plus d'espace */
     </style>
 </head>
 <body>
@@ -229,21 +230,21 @@
             <img src="{{ $logoPath }}" alt="CENA" class="logo-left">
             <img src="{{ $logoPath }}" alt="CENA" class="logo-right">
         @endif
-        <div class="header-title">REPUBLIQUE DU BENIN</div>
-        <div class="header-title">COMMISSION ELECTORALE NATIONALE AUTONOME</div>
-        <div class="header-subtitle">ELECTION DES MEMBRES DE L'ASSEMBLEE NATIONALE</div>
+        <div class="header-title">RÉPUBLIQUE DU BÉNIN</div>
+        <div class="header-title">COMMISSION ÉLECTORALE NATIONALE AUTONOME</div>
+        <div class="header-subtitle">ÉLECTION DES MEMBRES DE L'ASSEMBLÉE NATIONALE</div>
         <div class="header-subtitle">SCRUTIN DU : 11 JANVIER 2026</div>
     </div>
 
     <div class="box">
-        <div class="box-title">PROCES-VERBAL DE COMPILATION DES RESULTATS DU VILLAGE OU DU QUARTIER DE VILLE</div>
+        <div class="box-title">PROCÈS-VERBAL DE COMPILATION DES RÉSULTATS DU VILLAGE OU DU QUARTIER DE VILLE</div>
     </div>
 
     <div class="localisation-box">
         <div class="localisation-header">LOCALISATION</div>
         <table class="localisation-table">
             <tr>
-                <td>DEPARTEMENT :</td>
+                <td>DÉPARTEMENT :</td>
                 <td>{{ strtoupper($localisation['departement'] ?? '') }}</td>
             </tr>
             <tr>
@@ -259,7 +260,7 @@
                 <td>{{ strtoupper($localisation['village_quartier'] ?? '') }}</td>
             </tr>
             <tr>
-                <td>COORDONNATEUR DE L'ARRONDISSEMENT OU DE LA ZONE :</td>
+                <td>COORDONNATEUR ARROND./ZONE :</td>
                 <td>{{ $pv->coordonnateur ?? '' }}</td>
             </tr>
         </table>
@@ -294,12 +295,12 @@
         <table class="results-table">
             <thead>
                 <tr>
-                    <th style="width: 10%;">POSTE DE VOTE</th>
+                    <th style="width: 11%;">POSTE DE VOTE</th>
                     @foreach($entites as $entite)
-                        <th style="width: {{ 35 / count($entites) }}%;">{{ $entite['sigle'] }}</th>
+                        <th style="width: {{ 37 / count($entites) }}%;">{{ $entite['sigle'] }}</th>
                     @endforeach
-                    <th style="width: 8%;">BULLETINS NULS</th>
-                    <th style="width: 47%;">NOMS, PRENOM(S) ET SIGNATURES DES PRESIDENTS DE POSTES DE VOTE</th>
+                    <th style="width: 8%;">B. NULS</th>
+                    <th style="width: 44%;">NOMS, PRÉNOM(S) ET SIGNATURES DES PRÉSIDENTS DE POSTES</th>
                 </tr>
             </thead>
             <tbody>
@@ -315,7 +316,7 @@
                 @endforeach
                 
                 <tr class="total-row">
-                    <td class="left">TOTAL CENTRE DE VOTE</td>
+                    <td class="left">TOTAL CENTRE</td>
                     @foreach($entites as $entite)
                         @php
                             $totalCentre = collect($postesLignes)->sum(fn($l) => $l['resultats'][$entite['id']]['nombre_voix'] ?? 0);
@@ -341,9 +342,9 @@
             <tr>
                 <th style="width: 20%;">TOTAL VILLAGE/QUARTIER</th>
                 @foreach($entites as $entite)
-                    <th style="width: {{ 60 / count($entites) }}%;">{{ $entite['sigle'] }}</th>
+                    <th style="width: {{ 62 / count($entites) }}%;">{{ $entite['sigle'] }}</th>
                 @endforeach
-                <th style="width: 20%;">BULLETINS NULS</th>
+                <th style="width: 18%;">BULLETINS NULS</th>
             </tr>
         </thead>
         <tbody>
@@ -363,10 +364,10 @@
     <table class="results-table" style="margin-top: 3mm;">
         <thead>
             <tr>
-                <th style="width: 18%;">PARTI POLITIQUE</th>
-                <th style="width: 37%;">NOM ET PRENOM(S) DU DELEGUE</th>
-                <th style="width: 25%;">SIGNATURE</th>
-                <th style="width: 20%;">MOTIF D'ABSENCE DE SIGNATURE</th>
+                <th style="width: 16%;">PARTI POLITIQUE</th>
+                <th style="width: 35%;">NOM ET PRÉNOM(S) DU DÉLÉGUÉ</th>
+                <th style="width: 28%;">SIGNATURE</th>
+                <th style="width: 21%;">MOTIF D'ABSENCE</th>
             </tr>
         </thead>
         <tbody>
@@ -382,11 +383,11 @@
     </table>
 
     <div class="signature-box">
-        NOM, PRENOM(S) ET SIGNATURE DU COORDONNATEUR DE L'ARRONDISSEMENT OU DE LA ZONE
+        NOM, PRÉNOM(S) ET SIGNATURE DU COORDONNATEUR DE L'ARRONDISSEMENT OU DE LA ZONE
         <div class="coordonnateur-nom">
             {{ $pv->coordonnateur ?? '' }}
         </div>
-        @if(strtolower(trim($pv->statut)) === 'valide' || strtolower(trim($pv->statut)) === 'validé' || strtolower(trim($pv->statut)) === 'signé')
+        @if(isset($pv->statut) && in_array(strtolower(trim($pv->statut)), ['valide', 'validé', 'signé']))
             <div class="signature-status">SIGNÉ</div>
         @endif
     </div>

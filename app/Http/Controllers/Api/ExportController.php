@@ -6,15 +6,43 @@ use App\Http\Controllers\Controller;
 use App\Models\ProcesVerbal;
 use Illuminate\Support\Facades\DB;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Dompdf\Dompdf;
-use Dompdf\Options;
+use Illuminate\Http\Response;
 
+/**
+ * @OA\Tag(
+ * name="Exports",
+ * description="Génération de documents et rapports (PDF)"
+ * )
+ */
 class ExportController extends Controller
 {
     /**
-     * Export PDF d'un PV avec templates complets
+     * @OA\Get(
+     * path="/api/v1/pv/{id}/export/pdf",
+     * operationId="exportPvPdf",
+     * tags={"Exports"},
+     * summary="Exporter un PV en PDF",
+     * description="Génère et télécharge le PV au format PDF avec le template approprié (Arrondissement, Quartier, etc.)",
+     * @OA\Parameter(
+     * name="id",
+     * in="path",
+     * required=true,
+     * description="ID du Procès-Verbal",
+     * @OA\Schema(type="integer")
+     * ),
+     * @OA\Response(
+     * response=200,
+     * description="Fichier PDF téléchargé avec succès",
+     * @OA\MediaType(
+     * mediaType="application/pdf",
+     * @OA\Schema(type="string", format="binary")
+     * )
+     * ),
+     * @OA\Response(response=404, description="PV non trouvé"),
+     * @OA\Response(response=500, description="Erreur lors de la génération")
+     * )
      */
-    public function exportPdf(string $id)
+    public function exportPdf(int $id)
     {
         try {
             // 1. Charger le PV avec toutes les relations
@@ -47,15 +75,18 @@ class ExportController extends Controller
                 'resultatsGlobaux' => $this->formatterResultatsGlobaux($pv),
                 'signatures' => $pv->signatures->sortBy('ordre'),
                 'entites' => $entites,
+                'coordonnateur' => '', // Champ vide pour signature manuelle si besoin
             ];
 
-            // 6. Générer le PDF
+            // 6. Générer le PDF avec les marges "spécimen" (15mm)
             $pdf = Pdf::loadView("exports.pv.{$template}", $data)
                 ->setPaper('a4', 'landscape')
-                ->setOption('margin-top', 10)
-                ->setOption('margin-right', 10)
-                ->setOption('margin-bottom', 10)
-                ->setOption('margin-left', 10);
+                ->setOption('isHtml5ParserEnabled', true)
+                ->setOption('isRemoteEnabled', true)
+                ->setOption('margin-top', 15)    // 15mm
+                ->setOption('margin-right', 15)  // 15mm
+                ->setOption('margin-bottom', 15) // 15mm
+                ->setOption('margin-left', 15);  // 15mm
 
             // 7. Nom du fichier
             $filename = $this->generateFilename($pv);
@@ -132,8 +163,7 @@ class ExportController extends Controller
     }
 
     /**
-     * ✅ CORRIGÉ : Formater les lignes en groupant par ENTITÉ POLITIQUE
-     * ✅ AJOUTÉ : Inclure le nom du centre de vote pour les postes
+     * Formater les lignes en groupant par ENTITÉ POLITIQUE
      */
     private function formatterLignes(ProcesVerbal $pv): array
     {
@@ -149,21 +179,19 @@ class ExportController extends Controller
                 'resultats' => [],
             ];
 
-            // ✅ AJOUTÉ : Récupérer le nom du centre de vote pour les postes
+            // Récupérer le nom du centre de vote pour les postes
             if ($ligne->type === 'poste_vote' && $ligne->posteVote && $ligne->posteVote->centreVote) {
                 $ligneData['centre_vote_nom'] = $ligne->posteVote->centreVote->nom;
             }
 
-            // Grouper par entité politique (pas par candidature)
+            // Grouper par entité politique
             foreach ($ligne->resultats as $resultat) {
                 $entiteId = $resultat->candidature->entite_politique_id ?? null;
                 
                 if ($entiteId) {
-                    // Si cette entité existe déjà, additionner les voix
                     if (isset($ligneData['resultats'][$entiteId])) {
                         $ligneData['resultats'][$entiteId]['nombre_voix'] += $resultat->nombre_voix ?? 0;
                     } else {
-                        // Sinon, créer l'entrée
                         $ligneData['resultats'][$entiteId] = [
                             'entite_id' => $entiteId,
                             'entite_politique' => $resultat->candidature->entitePolitique->nom ?? '',
@@ -191,11 +219,9 @@ class ExportController extends Controller
             $entiteId = $resultat->candidature->entite_politique_id ?? null;
             
             if ($entiteId) {
-                // Si cette entité existe déjà, additionner les voix
                 if (isset($grouped[$entiteId])) {
                     $grouped[$entiteId]['nombre_voix'] += $resultat->nombre_voix ?? 0;
                 } else {
-                    // Sinon, créer l'entrée
                     $grouped[$entiteId] = [
                         'entite_id' => $entiteId,
                         'entite_politique' => $resultat->candidature->entitePolitique->nom ?? '',
@@ -214,7 +240,6 @@ class ExportController extends Controller
      */
     private function getEntitesPolitiques(ProcesVerbal $pv): array
     {
-        // 1. Récupérer toutes les candidatures de l'élection avec leurs entités
         $candidatures = DB::table('candidatures as c')
             ->join('entites_politiques as ep', 'c.entite_politique_id', '=', 'ep.id')
             ->where('c.election_id', $pv->election_id)
@@ -232,14 +257,12 @@ class ExportController extends Controller
             )
             ->get();
         
-        // 2. Grouper par entité politique (DISTINCT)
         $entitesUniques = [];
         $seenIds = [];
         
         foreach ($candidatures as $candidature) {
             $entiteId = $candidature->entite_id;
             
-            // Si on a déjà vu cette entité, ignorer
             if (in_array($entiteId, $seenIds)) {
                 continue;
             }
@@ -259,31 +282,24 @@ class ExportController extends Controller
             ];
         }
         
-        // 3. Tri personnalisé selon code élection
         $codeElection = $pv->election->code ?? '';
+        $ordrePersonnalise = null;
         
-        // Définir l'ordre selon le code de l'élection
         if (strpos($codeElection, 'LEG') !== false) {
-            // LÉGISLATIVES : FCBE → LD → BR → MOELE-BENIN → UP LE RENOUVEAU
             $ordrePersonnalise = ['FCBE', 'LD', 'BR', 'MOELE-BENIN', 'UP'];
         } elseif (strpos($codeElection, 'COM') !== false) {
-            // COMMUNALES : FCBE → UP LE RENOUVEAU → BR
             $ordrePersonnalise = ['FCBE', 'UP', 'BR'];
         } else {
-            // PRÉSIDENTIELLES ou autre : ordre par numero_liste
             usort($entitesUniques, function($a, $b) {
                 return $a['numero_liste'] <=> $b['numero_liste'];
             });
-            
             return $entitesUniques;
         }
         
-        // 4. Appliquer l'ordre personnalisé
         usort($entitesUniques, function($a, $b) use ($ordrePersonnalise) {
             $posA = array_search($a['sigle'], $ordrePersonnalise);
             $posB = array_search($b['sigle'], $ordrePersonnalise);
             
-            // Si sigle non trouvé, mettre à la fin
             if ($posA === false) $posA = 999;
             if ($posB === false) $posB = 999;
             
@@ -299,16 +315,11 @@ class ExportController extends Controller
     private function getTemplateName(string $niveau): string
     {
         switch ($niveau) {
-            case 'village_quartier':
-                return 'village_quartier';
-            case 'arrondissement':
-                return 'arrondissement';
-            case 'commune':
-                return 'commune';
-            case 'national':
-                return 'national';
-            default:
-                return 'village_quartier';
+            case 'village_quartier': return 'village_quartier';
+            case 'arrondissement': return 'arrondissement';
+            case 'commune': return 'commune';
+            case 'national': return 'national';
+            default: return 'village_quartier';
         }
     }
 
@@ -323,37 +334,4 @@ class ExportController extends Controller
 
         return "PV_{$niveau}_{$code}_{$date}.pdf";
     }
-
-
-    public function exportPdf(int $pvId): Response
-{
-    $pv = ProcesVerbal::with([...])->findOrFail($pvId);
-    
-    $options = new Options();
-    $options->set('isHtml5ParserEnabled', true);
-    $options->set('isRemoteEnabled', true);
-    
-    $dompdf = new Dompdf($options);
-    
-    // ✅ Marges conformes spécimens (en mm)
-    $dompdf->setPaper('A4', 'landscape');
-    $dompdf->set_option('margin-top', '15mm');
-    $dompdf->set_option('margin-right', '15mm');
-    $dompdf->set_option('margin-bottom', '15mm');
-    $dompdf->set_option('margin-left', '15mm');
-    
-    $html = view('pdf.pv-arrondissement', [
-        'pv' => $pv,
-        'lignes' => $pv->lignes,
-        // ✅ Coordonnateur VIDE
-        'coordonnateur' => '', // Pas $pv->coordonnateur
-    ])->render();
-    
-    $dompdf->loadHtml($html);
-    $dompdf->render();
-    
-    return $dompdf->stream("PV_{$pv->code}.pdf");
-}
-
-
 }

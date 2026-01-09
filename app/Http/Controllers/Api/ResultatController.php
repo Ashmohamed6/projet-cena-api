@@ -4,672 +4,496 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\{Request, JsonResponse};
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB, Cache, Log};
 
 /**
  * ResultatController
  * 
- * Gestion des résultats (saisie, comparaison, validation)
+ * Gestion des résultats électoraux législatifs
+ * Implémente les 3 étapes du code électoral (Article 146)
  */
 class ResultatController extends Controller
 {
     /**
-     * Saisie d'un résultat
+     * GET /api/v1/resultats/legislative/donnees-eligibilite
      * 
-     * POST /api/v1/resultats/saisie
-     * 
-     * @OA\Post(
-     *     path="/resultats/saisie",
-     *     tags={"Résultats"},
-     *     summary="Saisir un résultat",
-     *     description="Enregistre le résultat d'une candidature pour un PV spécifique",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\RequestBody(
-     *         required=true,
-     *         @OA\JsonContent(
-     *             required={"proces_verbal_id","candidature_id","nombre_voix"},
-     *             @OA\Property(property="proces_verbal_id", type="integer", example=1, description="ID du PV"),
-     *             @OA\Property(property="candidature_id", type="integer", example=1, description="ID de la candidature"),
-     *             @OA\Property(property="nombre_voix", type="integer", minimum=0, example=150, description="Nombre de voix obtenues"),
-     *             @OA\Property(property="version", type="integer", minimum=1, example=1, description="Numéro de version (défaut: 1)"),
-     *             @OA\Property(property="operateur_user_id", type="integer", example=1, description="ID de l'opérateur saisissant")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=201,
-     *         description="Résultat saisi avec succès",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="Résultat saisi avec succès"),
-     *             @OA\Property(property="data", type="object")
-     *         )
-     *     ),
-     *     @OA\Response(response=422, description="Erreur de validation"),
-     *     @OA\Response(response=401, description="Non authentifié")
-     * )
+     * Retourne les données nécessaires pour l'étape 1 (filtre d'éligibilité)
+     * - Voix par circonscription et par entité politique
+     * - Total des suffrages par circonscription
      */
-    public function saisie(Request $request): JsonResponse
+    public function donneesEligibilite(Request $request): JsonResponse
     {
-        // ✅ CORRECTION: Validation avec les bonnes colonnes
-        $validated = $request->validate([
-            'proces_verbal_id' => 'required|integer|exists:proces_verbaux,id',
-            'candidature_id' => 'required|integer|exists:candidatures,id',
-            'nombre_voix' => 'required|integer|min:0',
-            'version' => 'sometimes|integer|min:1',
-            'operateur_user_id' => 'nullable|integer|exists:users,id',
-        ]);
+        try {
+            $electionId = $request->input('election_id');
+            
+            if (!$electionId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'election_id requis',
+                ], 400);
+            }
 
-        // Version par défaut = 1
-        if (!isset($validated['version'])) {
-            $validated['version'] = 1;
-        }
+            // 1. Récupérer toutes les circonscriptions électorales
+            $circonscriptions = DB::table('circonscriptions_electorales as ce')
+                ->join('departements as d', 'ce.departement_id', '=', 'd.id')
+                ->select(
+                    'ce.id',
+                    'ce.code',
+                    'ce.nom',
+                    'ce.numero',
+                    'ce.nombre_sieges_total',
+                    'ce.nombre_sieges_femmes',
+                    'ce.nombre_sieges_homme',
+                    'd.id as departement_id',
+                    'd.nom as departement_nom'
+                )
+                ->orderBy('ce.numero')
+                ->get();
 
-        $validated['date_saisie'] = now();
-        $validated['created_at'] = now();
-        $validated['updated_at'] = now();
+            // 2. Récupérer toutes les entités politiques candidates
+            $entitesPolitiques = DB::table('candidatures as c')
+                ->join('entites_politiques as ep', 'c.entite_politique_id', '=', 'ep.id')
+                ->where('c.election_id', $electionId)
+                ->where('c.statut', 'validee')
+                ->select(
+                    'ep.id',
+                    'ep.nom',
+                    'ep.sigle',
+                    'ep.couleur',
+                    'ep.code',
+                    'ep.type'
+                )
+                ->distinct()
+                ->orderBy('ep.sigle')
+                ->get();
 
-        // ✅ CORRECTION: Table 'resultats' (pas 'resultats_pv')
-        $resultatId = DB::table('resultats')->insertGetId($validated);
+            // 3. Récupérer les voix par circonscription et par entité
+            $voixParCircoEtEntite = [];
+            $totalVotantsParCirco = [];
 
-        $resultat = DB::table('resultats')->where('id', $resultatId)->first();
+            foreach ($circonscriptions as $circo) {
+                $voixParCircoEtEntite[$circo->id] = [];
+                $totalSuffrages = 0;
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Résultat saisi avec succès',
-            'data' => $resultat,
-        ], 201);
-    }
+                foreach ($entitesPolitiques as $entite) {
+                    // Récupérer la candidature pour cette circo et cette entité
+                    $candidature = DB::table('candidatures')
+                        ->where('election_id', $electionId)
+                        ->where('entite_politique_id', $entite->id)
+                        ->where('circonscription_id', $circo->id)
+                        ->where('statut', 'validee')
+                        ->first();
 
-    /**
-     * Saisie multiple (tous les résultats d'un PV)
-     * 
-     * POST /api/v1/resultats/saisie-multiple
-     * 
-     * @OA\Post(
-     *     path="/resultats/saisie-multiple",
-     *     tags={"Résultats"},
-     *     summary="Saisir plusieurs résultats",
-     *     description="Enregistre tous les résultats d'un PV en une seule opération (saisie complète)",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\RequestBody(
-     *         required=true,
-     *         @OA\JsonContent(
-     *             required={"proces_verbal_id","resultats"},
-     *             @OA\Property(property="proces_verbal_id", type="integer", example=1, description="ID du PV"),
-     *             @OA\Property(property="version", type="integer", minimum=1, example=1, description="Numéro de version (défaut: 1)"),
-     *             @OA\Property(property="operateur_user_id", type="integer", example=1, description="ID de l'opérateur"),
-     *             @OA\Property(
-     *                 property="resultats",
-     *                 type="array",
-     *                 minItems=1,
-     *                 @OA\Items(
-     *                     type="object",
-     *                     required={"candidature_id","nombre_voix"},
-     *                     @OA\Property(property="candidature_id", type="integer", example=1),
-     *                     @OA\Property(property="nombre_voix", type="integer", minimum=0, example=150)
-     *                 ),
-     *                 example={
-     *                     {"candidature_id": 1, "nombre_voix": 150},
-     *                     {"candidature_id": 2, "nombre_voix": 75},
-     *                     {"candidature_id": 3, "nombre_voix": 50}
-     *                 }
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=201,
-     *         description="Résultats saisis avec succès",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="Résultats saisis avec succès"),
-     *             @OA\Property(property="data", type="array", @OA\Items(type="object")),
-     *             @OA\Property(property="count", type="integer", example=3),
-     *             @OA\Property(property="version", type="integer", example=1)
-     *         )
-     *     ),
-     *     @OA\Response(response=400, description="Des résultats existent déjà pour cette version"),
-     *     @OA\Response(response=404, description="PV non trouvé"),
-     *     @OA\Response(response=422, description="Erreur de validation"),
-     *     @OA\Response(response=401, description="Non authentifié")
-     * )
-     */
-    public function saisieMultiple(Request $request): JsonResponse
-    {
-        // ✅ CORRECTION: Validation avec les bonnes colonnes
-        $validated = $request->validate([
-            'proces_verbal_id' => 'required|integer|exists:proces_verbaux,id',
-            'version' => 'sometimes|integer|min:1',
-            'operateur_user_id' => 'nullable|integer|exists:users,id',
-            'resultats' => 'required|array|min:1',
-            'resultats.*.candidature_id' => 'required|integer|exists:candidatures,id',
-            'resultats.*.nombre_voix' => 'required|integer|min:0',
-        ]);
+                    if (!$candidature) {
+                        $voixParCircoEtEntite[$circo->id][$entite->id] = 0;
+                        continue;
+                    }
 
-        // Version par défaut = 1
-        $version = $validated['version'] ?? 1;
+                    // Agréger les voix depuis pv_ligne_resultats
+                    // en passant par les PV qui appartiennent à cette circonscription
+                    $voix = DB::table('pv_ligne_resultats as plr')
+                        ->join('pv_lignes as pl', 'plr.pv_ligne_id', '=', 'pl.id')
+                        ->join('proces_verbaux as pv', 'pl.proces_verbal_id', '=', 'pv.id')
+                        ->join('communes as co', function($join) {
+                            $join->on('pv.niveau', '=', DB::raw("'commune'"))
+                                 ->on('pv.niveau_id', '=', 'co.id');
+                        })
+                        ->where('pv.election_id', $electionId)
+                        ->where('pv.statut', 'valide')
+                        ->where('plr.candidature_id', $candidature->id)
+                        ->where('co.circonscription_id', $circo->id)
+                        ->sum('plr.nombre_voix');
 
-        // Vérifier que le PV existe
-        $pv = DB::table('proces_verbaux')->where('id', $validated['proces_verbal_id'])->first();
+                    // Ajouter aussi les PV arrondissement et village/quartier
+                    $voixArrond = DB::table('pv_ligne_resultats as plr')
+                        ->join('pv_lignes as pl', 'plr.pv_ligne_id', '=', 'pl.id')
+                        ->join('proces_verbaux as pv', 'pl.proces_verbal_id', '=', 'pv.id')
+                        ->join('arrondissements as ar', function($join) {
+                            $join->on('pv.niveau', '=', DB::raw("'arrondissement'"))
+                                 ->on('pv.niveau_id', '=', 'ar.id');
+                        })
+                        ->join('communes as co', 'ar.commune_id', '=', 'co.id')
+                        ->where('pv.election_id', $electionId)
+                        ->where('pv.statut', 'valide')
+                        ->where('plr.candidature_id', $candidature->id)
+                        ->where('co.circonscription_id', $circo->id)
+                        ->sum('plr.nombre_voix');
 
-        if (!$pv) {
-            return response()->json([
-                'success' => false,
-                'message' => 'PV non trouvé',
-            ], 404);
-        }
+                    $voixVillage = DB::table('pv_ligne_resultats as plr')
+                        ->join('pv_lignes as pl', 'plr.pv_ligne_id', '=', 'pl.id')
+                        ->join('proces_verbaux as pv', 'pl.proces_verbal_id', '=', 'pv.id')
+                        ->join('villages_quartiers as vq', function($join) {
+                            $join->on('pv.niveau', '=', DB::raw("'village_quartier'"))
+                                 ->on('pv.niveau_id', '=', 'vq.id');
+                        })
+                        ->join('arrondissements as ar', 'vq.arrondissement_id', '=', 'ar.id')
+                        ->join('communes as co', 'ar.commune_id', '=', 'co.id')
+                        ->where('pv.election_id', $electionId)
+                        ->where('pv.statut', 'valide')
+                        ->where('plr.candidature_id', $candidature->id)
+                        ->where('co.circonscription_id', $circo->id)
+                        ->sum('plr.nombre_voix');
 
-        // Vérifier qu'il n'y a pas déjà des résultats pour cette version
-        $existants = DB::table('resultats')
-            ->where('proces_verbal_id', $validated['proces_verbal_id'])
-            ->where('version', $version)
-            ->count();
+                    $totalVoixEntite = (int)$voix + (int)$voixArrond + (int)$voixVillage;
+                    $voixParCircoEtEntite[$circo->id][$entite->id] = $totalVoixEntite;
+                    $totalSuffrages += $totalVoixEntite;
+                }
 
-        if ($existants > 0) {
-            return response()->json([
-                'success' => false,
-                'message' => "Des résultats existent déjà pour cette version ($version). Utilisez une version différente ou supprimez les résultats existants.",
-            ], 400);
-        }
+                $totalVotantsParCirco[$circo->id] = $totalSuffrages;
+            }
 
-        $resultatsInseres = [];
+            // 4. Calculer les totaux nationaux
+            $voixNationales = [];
+            $totalNational = 0;
 
-        // ✅ CORRECTION: Utiliser 'nombre_voix' au lieu de 'voix'
-        foreach ($validated['resultats'] as $resultatData) {
-            $data = [
-                'proces_verbal_id' => $validated['proces_verbal_id'],
-                'candidature_id' => $resultatData['candidature_id'],
-                'nombre_voix' => $resultatData['nombre_voix'],
-                'version' => $version,
-                'operateur_user_id' => $validated['operateur_user_id'] ?? null,
-                'date_saisie' => now(),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
+            foreach ($entitesPolitiques as $entite) {
+                $total = 0;
+                foreach ($circonscriptions as $circo) {
+                    $total += $voixParCircoEtEntite[$circo->id][$entite->id] ?? 0;
+                }
+                $voixNationales[$entite->id] = $total;
+                $totalNational += $total;
+            }
 
-            // ✅ CORRECTION: Table 'resultats' (pas 'resultats_pv')
-            $resultatId = DB::table('resultats')->insertGetId($data);
-            $resultatsInseres[] = DB::table('resultats')->where('id', $resultatId)->first();
-        }
+            // 5. Récupérer les coalitions déposées (si la table existe)
+            $coalitionsData = [];
+            
+            if (DB::getSchemaBuilder()->hasTable('coalitions')) {
+                $coalitions = DB::table('coalitions')
+                    ->where('election_id', $electionId)
+                    ->where('statut', 'validee')
+                    ->get();
 
-        // ✅ CORRECTION: Statut 'en_verification' (pas 'en_attente')
-        DB::table('proces_verbaux')->where('id', $validated['proces_verbal_id'])->update([
-            'statut' => 'en_verification',
-            'updated_at' => now(),
-        ]);
+                foreach ($coalitions as $coalition) {
+                    $membres = DB::table('coalition_membres as cm')
+                        ->join('entites_politiques as ep', 'cm.entite_politique_id', '=', 'ep.id')
+                        ->where('cm.coalition_id', $coalition->id)
+                        ->select('ep.id', 'ep.nom', 'ep.sigle')
+                        ->get();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Résultats saisis avec succès',
-            'data' => $resultatsInseres,
-            'count' => count($resultatsInseres),
-            'version' => $version,
-        ], 201);
-    }
-
-    /**
-     * Comparaison des saisies multiples (par version)
-     * 
-     * GET /api/v1/resultats/comparaison/{pvId}
-     * 
-     * @OA\Get(
-     *     path="/resultats/comparaison/{pvId}",
-     *     tags={"Résultats"},
-     *     summary="Comparer les versions de saisie",
-     *     description="Compare les différentes versions de saisie d'un PV pour détecter les divergences",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="pvId",
-     *         in="path",
-     *         description="ID du procès-verbal",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Comparaison des versions",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="pv_id", type="integer", example=1),
-     *                 @OA\Property(property="versions", type="array", @OA\Items(type="string"), example={"version_1", "version_2"}),
-     *                 @OA\Property(property="nb_versions", type="integer", example=2),
-     *                 @OA\Property(
-     *                     property="resultats",
-     *                     type="object",
-     *                     description="Résultats groupés par version"
-     *                 ),
-     *                 @OA\Property(
-     *                     property="differences",
-     *                     type="array",
-     *                     @OA\Items(
-     *                         type="object",
-     *                         @OA\Property(property="entite", type="string"),
-     *                         @OA\Property(property="version_1", type="integer"),
-     *                         @OA\Property(property="version_2", type="integer"),
-     *                         @OA\Property(property="ecart", type="integer")
-     *                     )
-     *                 ),
-     *                 @OA\Property(property="nb_differences", type="integer", example=2)
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="PV non trouvé"),
-     *     @OA\Response(response=401, description="Non authentifié")
-     * )
-     */
-    public function comparaison(int $pvId): JsonResponse
-    {
-        $pv = DB::table('proces_verbaux')->where('id', $pvId)->first();
-
-        if (!$pv) {
-            return response()->json([
-                'success' => false,
-                'message' => 'PV non trouvé',
-            ], 404);
-        }
-
-        // ✅ CORRECTION: Table 'resultats' + colonne 'nombre_voix'
-        $resultatsParVersion = DB::table('resultats as r')
-            ->join('candidatures as c', 'r.candidature_id', '=', 'c.id')
-            ->join('entites_politiques as ep', 'c.entite_politique_id', '=', 'ep.id')
-            ->where('r.proces_verbal_id', $pvId)
-            ->select(
-                'r.version',
-                'c.numero_liste',
-                'ep.nom as entite',
-                'ep.sigle',
-                'r.nombre_voix'
-            )
-            ->orderBy('r.version')
-            ->orderBy('c.numero_liste')
-            ->get();
-
-        // Grouper par version
-        $comparaison = [];
-        foreach ($resultatsParVersion as $resultat) {
-            $comparaison['version_' . $resultat->version][] = [
-                'numero_liste' => $resultat->numero_liste,
-                'entite' => $resultat->entite,
-                'sigle' => $resultat->sigle,
-                'nombre_voix' => $resultat->nombre_voix,
-            ];
-        }
-
-        // Détecter les différences entre versions
-        $differences = [];
-        $versions = array_keys($comparaison);
-
-        if (count($versions) > 1) {
-            $version1 = $versions[0];
-            $version2 = $versions[1];
-
-            for ($i = 0; $i < count($comparaison[$version1]); $i++) {
-                if (isset($comparaison[$version2][$i]) && 
-                    $comparaison[$version1][$i]['nombre_voix'] !== $comparaison[$version2][$i]['nombre_voix']) {
-                    
-                    $differences[] = [
-                        'entite' => $comparaison[$version1][$i]['entite'],
-                        $version1 => $comparaison[$version1][$i]['nombre_voix'],
-                        $version2 => $comparaison[$version2][$i]['nombre_voix'],
-                        'ecart' => abs($comparaison[$version1][$i]['nombre_voix'] - $comparaison[$version2][$i]['nombre_voix']),
+                    $coalitionsData[] = [
+                        'id' => $coalition->id,
+                        'nom' => $coalition->nom,
+                        'code' => $coalition->code,
+                        'membres' => $membres,
+                        'membre_ids' => $membres->pluck('id')->toArray(),
                     ];
                 }
             }
-        }
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'pv_id' => $pvId,
-                'versions' => $versions,
-                'nb_versions' => count($versions),
-                'resultats' => $comparaison,
-                'differences' => $differences,
-                'nb_differences' => count($differences),
-            ],
-        ]);
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'circonscriptions' => $circonscriptions,
+                    'entites_politiques' => $entitesPolitiques,
+                    'voix_par_circo_et_entite' => $voixParCircoEtEntite,
+                    'total_votants_par_circo' => $totalVotantsParCirco,
+                    'voix_nationales' => $voixNationales,
+                    'total_national' => $totalNational,
+                    'coalitions' => $coalitionsData,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('ResultatController@donneesEligibilite:', [
+                'error' => $e->getMessage(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors du chargement des données',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 500);
+        }
     }
 
     /**
-     * Validation des résultats d'un PV
+     * POST /api/v1/resultats/legislative/calculer-eligibilite
      * 
-     * POST /api/v1/resultats/validation/{pvId}
-     * 
-     * @OA\Post(
-     *     path="/resultats/validation/{pvId}",
-     *     tags={"Résultats"},
-     *     summary="Valider les résultats d'un PV",
-     *     description="Valide une version spécifique des résultats et supprime les autres versions",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="pvId",
-     *         in="path",
-     *         description="ID du procès-verbal",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\RequestBody(
-     *         required=true,
-     *         @OA\JsonContent(
-     *             required={"version_validee"},
-     *             @OA\Property(property="version_validee", type="integer", minimum=1, example=1, description="Numéro de la version à valider"),
-     *             @OA\Property(property="valide_par_user_id", type="integer", example=1, description="ID de l'utilisateur validant")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Résultats validés avec succès",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="Résultats validés avec succès"),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="pv_id", type="integer", example=1),
-     *                 @OA\Property(property="version_validee", type="integer", example=1),
-     *                 @OA\Property(property="resultats", type="array", @OA\Items(type="object")),
-     *                 @OA\Property(property="count", type="integer", example=8)
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="PV ou version non trouvée"),
-     *     @OA\Response(response=422, description="Erreur de validation"),
-     *     @OA\Response(response=401, description="Non authentifié")
-     * )
+     * Calcule l'éligibilité des entités selon les règles de l'étape 1
      */
-    public function validation(Request $request, int $pvId): JsonResponse
+    public function calculerEligibilite(Request $request): JsonResponse
     {
-        // ✅ CORRECTION: Valider la version à garder
-        $validated = $request->validate([
-            'version_validee' => 'required|integer|min:1',
-            'valide_par_user_id' => 'sometimes|integer|exists:users,id',
-        ]);
+        try {
+            $electionId = $request->input('election_id');
+            $voixParCircoEtEntite = $request->input('voix_par_circo_et_entite');
+            $voixNationales = $request->input('voix_nationales');
+            $totalNational = $request->input('total_national');
+            $totalVotantsParCirco = $request->input('total_votants_par_circo');
+            $coalitions = $request->input('coalitions', []);
 
-        $pv = DB::table('proces_verbaux')->where('id', $pvId)->first();
+            // Résultat : entite_id => status (eligible | non_eligible) + raison
+            $eligibilite = [];
 
-        if (!$pv) {
+            // 1. Vérifier les entités sans coalition
+            foreach ($voixNationales as $entiteId => $voixNat) {
+                $pctNational = ($totalNational > 0) ? ($voixNat / $totalNational) * 100 : 0;
+
+                // Vérifier si l'entité fait partie d'une coalition
+                $estDansCoalition = false;
+                foreach ($coalitions as $coal) {
+                    if (in_array($entiteId, $coal['membre_ids'])) {
+                        $estDansCoalition = true;
+                        break;
+                    }
+                }
+
+                if (!$estDansCoalition) {
+                    // Règle : ≥ 20% dans chacune des 24 circonscriptions
+                    $atteint20Partout = true;
+                    $nbCircosOk = 0;
+
+                    foreach ($voixParCircoEtEntite as $circoId => $voixParEntite) {
+                        $voixEntite = $voixParEntite[$entiteId] ?? 0;
+                        $totalCirco = $totalVotantsParCirco[$circoId] ?? 1;
+                        $pctCirco = ($totalCirco > 0) ? ($voixEntite / $totalCirco) * 100 : 0;
+
+                        if ($pctCirco >= 20) {
+                            $nbCircosOk++;
+                        } else {
+                            $atteint20Partout = false;
+                        }
+                    }
+
+                    $eligibilite[$entiteId] = [
+                        'eligible' => $atteint20Partout,
+                        'pct_national' => round($pctNational, 2),
+                        'nb_circos_20_pct' => $nbCircosOk,
+                        'status' => $atteint20Partout ? 'vert' : ($pctNational < 10 ? 'rouge' : 'jaune'),
+                        'raison' => $atteint20Partout 
+                            ? 'Éligible (≥20% dans toutes les circonscriptions)' 
+                            : ($pctNational < 10 
+                                ? 'Non éligible (<10% national)' 
+                                : "Non éligible (seulement {$nbCircosOk}/24 circos ≥20%)"),
+                    ];
+                }
+            }
+
+            // 2. Vérifier les membres de coalitions
+            foreach ($coalitions as $coalition) {
+                $membresEligibles = [];
+                $coalitionEligible = true;
+
+                // Vérifier que chaque membre a ≥10% national
+                foreach ($coalition['membre_ids'] as $membreId) {
+                    $voixMembre = $voixNationales[$membreId] ?? 0;
+                    $pctNational = ($totalNational > 0) ? ($voixMembre / $totalNational) * 100 : 0;
+
+                    if ($pctNational < 10) {
+                        $coalitionEligible = false;
+                        $eligibilite[$membreId] = [
+                            'eligible' => false,
+                            'pct_national' => round($pctNational, 2),
+                            'status' => 'rouge',
+                            'raison' => "Non éligible (<10% national, membre coalition {$coalition['nom']})",
+                        ];
+                    } else {
+                        $membresEligibles[] = $membreId;
+                    }
+                }
+
+                if (!$coalitionEligible) {
+                    continue;
+                }
+
+                // Vérifier que la coalition atteint ≥20% dans chacune des 24 circonscriptions
+                $coalitionAtteint20Partout = true;
+                $nbCircosOk = 0;
+
+                foreach ($voixParCircoEtEntite as $circoId => $voixParEntite) {
+                    $voixCoalition = 0;
+                    foreach ($coalition['membre_ids'] as $membreId) {
+                        $voixCoalition += $voixParEntite[$membreId] ?? 0;
+                    }
+
+                    $totalCirco = $totalVotantsParCirco[$circoId] ?? 1;
+                    $pctCirco = ($totalCirco > 0) ? ($voixCoalition / $totalCirco) * 100 : 0;
+
+                    if ($pctCirco >= 20) {
+                        $nbCircosOk++;
+                    } else {
+                        $coalitionAtteint20Partout = false;
+                    }
+                }
+
+                // Marquer les membres
+                foreach ($membresEligibles as $membreId) {
+                    $voixMembre = $voixNationales[$membreId] ?? 0;
+                    $pctNational = ($totalNational > 0) ? ($voixMembre / $totalNational) * 100 : 0;
+
+                    $eligibilite[$membreId] = [
+                        'eligible' => $coalitionAtteint20Partout,
+                        'pct_national' => round($pctNational, 2),
+                        'nb_circos_20_pct' => $nbCircosOk,
+                        'coalition' => $coalition['nom'],
+                        'status' => $coalitionAtteint20Partout ? 'vert' : 'jaune',
+                        'raison' => $coalitionAtteint20Partout 
+                            ? "Éligible (coalition {$coalition['nom']} ≥20% partout)" 
+                            : "Non éligible (coalition {$coalition['nom']} seulement {$nbCircosOk}/24 circos ≥20%)",
+                    ];
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'eligibilite' => $eligibilite,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('ResultatController@calculerEligibilite:', [
+                'error' => $e->getMessage(),
+                'line' => $e->getLine(),
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'PV non trouvé',
-            ], 404);
+                'message' => 'Erreur lors du calcul d\'éligibilité',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 500);
         }
-
-        // Vérifier que la version existe
-        $versionExiste = DB::table('resultats')
-            ->where('proces_verbal_id', $pvId)
-            ->where('version', $validated['version_validee'])
-            ->exists();
-
-        if (!$versionExiste) {
-            return response()->json([
-                'success' => false,
-                'message' => "La version {$validated['version_validee']} n'existe pas pour ce PV",
-            ], 404);
-        }
-
-        // ✅ CORRECTION: Supprimer les autres versions
-        DB::table('resultats')
-            ->where('proces_verbal_id', $pvId)
-            ->where('version', '!=', $validated['version_validee'])
-            ->delete();
-
-        // ✅ CORRECTION: Marquer le PV comme validé
-        $updateData = [
-            'statut' => 'valide',
-            'date_validation' => now(),
-            'updated_at' => now(),
-        ];
-
-        if (isset($validated['valide_par_user_id'])) {
-            $updateData['valide_par_user_id'] = $validated['valide_par_user_id'];
-        }
-
-        DB::table('proces_verbaux')->where('id', $pvId)->update($updateData);
-
-        // ✅ CORRECTION: Table 'resultats'
-        $resultatsValides = DB::table('resultats')
-            ->where('proces_verbal_id', $pvId)
-            ->where('version', $validated['version_validee'])
-            ->get();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Résultats validés avec succès',
-            'data' => [
-                'pv_id' => $pvId,
-                'version_validee' => $validated['version_validee'],
-                'resultats' => $resultatsValides,
-                'count' => $resultatsValides->count(),
-            ],
-        ]);
     }
 
     /**
-     * Historique des modifications d'un résultat
+     * POST /api/v1/resultats/legislative/repartir-sieges
      * 
-     * GET /api/v1/resultats/historique/{resultatId}
-     * 
-     * @OA\Get(
-     *     path="/resultats/historique/{resultatId}",
-     *     tags={"Résultats"},
-     *     summary="Historique d'un résultat",
-     *     description="Retourne l'historique complet des modifications d'un résultat spécifique",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="resultatId",
-     *         in="path",
-     *         description="ID du résultat",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Historique du résultat",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="resultat_actuel", type="object", description="État actuel du résultat"),
-     *                 @OA\Property(
-     *                     property="historique",
-     *                     type="array",
-     *                     @OA\Items(type="object"),
-     *                     description="Liste des modifications passées"
-     *                 ),
-     *                 @OA\Property(property="nb_modifications", type="integer", example=3)
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="Résultat non trouvé"),
-     *     @OA\Response(response=401, description="Non authentifié")
-     * )
+     * Répartit les sièges selon les étapes 2 & 3
      */
-    public function historique(int $resultatId): JsonResponse
+    public function repartirSieges(Request $request): JsonResponse
     {
-        // ✅ CORRECTION: Table 'resultats'
-        $resultat = DB::table('resultats')->where('id', $resultatId)->first();
+        try {
+            $electionId = $request->input('election_id');
+            $eligibilite = $request->input('eligibilite');
+            $voixParCircoEtEntite = $request->input('voix_par_circo_et_entite');
+            $totalVotantsParCirco = $request->input('total_votants_par_circo');
+            $circonscriptions = $request->input('circonscriptions');
 
-        if (!$resultat) {
+            // Filtrer les entités éligibles
+            $entitesEligibles = array_filter($eligibilite, function($e) {
+                return $e['eligible'] === true;
+            });
+
+            $entiteIdsEligibles = array_keys($entitesEligibles);
+
+            // Résultats par circonscription et globaux
+            $resultatsParCirco = [];
+            $siegesTotauxParEntite = [];
+
+            foreach ($entiteIdsEligibles as $entiteId) {
+                $siegesTotauxParEntite[$entiteId] = [
+                    'sieges_ordinaires' => 0,
+                    'sieges_femmes' => 0,
+                ];
+            }
+
+            // Pour chaque circonscription
+            foreach ($circonscriptions as $circo) {
+                $circoId = $circo['id'];
+                $siegesTotal = $circo['nombre_sieges_total'];
+                $siegesFemmes = $circo['nombre_sieges_femmes'];
+                $siegesOrdinaires = $siegesTotal - $siegesFemmes;
+
+                $totalVotants = $totalVotantsParCirco[$circoId] ?? 0;
+
+                if ($totalVotants == 0 || $siegesOrdinaires == 0) {
+                    continue;
+                }
+
+                // ÉTAPE 2 : Quotient électoral
+                $quotientElectoral = floor($totalVotants / $siegesOrdinaires);
+
+                // Attribution initiale par quotient
+                $siegesAttribues = [];
+                $restesVoix = [];
+
+                foreach ($entiteIdsEligibles as $entiteId) {
+                    $voix = $voixParCircoEtEntite[$circoId][$entiteId] ?? 0;
+                    $sieges = floor($voix / $quotientElectoral);
+
+                    $siegesAttribues[$entiteId] = $sieges;
+                    $restesVoix[$entiteId] = $voix % $quotientElectoral;
+                }
+
+                $totalSiegesAttribues = array_sum($siegesAttribues);
+                $siegesRestants = $siegesOrdinaires - $totalSiegesAttribues;
+
+                // Attribution des sièges restants (plus forte moyenne)
+                while ($siegesRestants > 0) {
+                    $meilleureEntite = null;
+                    $meilleureMoyenne = -1;
+
+                    foreach ($entiteIdsEligibles as $entiteId) {
+                        $voix = $voixParCircoEtEntite[$circoId][$entiteId] ?? 0;
+                        $siegesDeja = $siegesAttribues[$entiteId];
+                        $moyenne = $voix / ($siegesDeja + 1);
+
+                        if ($moyenne > $meilleureMoyenne) {
+                            $meilleureMoyenne = $moyenne;
+                            $meilleureEntite = $entiteId;
+                        }
+                    }
+
+                    if ($meilleureEntite) {
+                        $siegesAttribues[$meilleureEntite]++;
+                        $siegesRestants--;
+                    } else {
+                        break;
+                    }
+                }
+
+                // ÉTAPE 3 : Siège femme (Winner Takes All)
+                $maxVoix = 0;
+                $gagnantFemme = null;
+
+                foreach ($entiteIdsEligibles as $entiteId) {
+                    $voix = $voixParCircoEtEntite[$circoId][$entiteId] ?? 0;
+                    if ($voix > $maxVoix) {
+                        $maxVoix = $voix;
+                        $gagnantFemme = $entiteId;
+                    }
+                }
+
+                $siegeFemme = [];
+                if ($gagnantFemme) {
+                    $siegeFemme[$gagnantFemme] = 1;
+                }
+
+                // Sauvegarder les résultats de la circonscription
+                $resultatsParCirco[$circoId] = [
+                    'quotient_electoral' => $quotientElectoral,
+                    'sieges_ordinaires' => $siegesAttribues,
+                    'siege_femme' => $siegeFemme,
+                ];
+
+                // Ajouter aux totaux globaux
+                foreach ($entiteIdsEligibles as $entiteId) {
+                    $siegesTotauxParEntite[$entiteId]['sieges_ordinaires'] += $siegesAttribues[$entiteId] ?? 0;
+                    $siegesTotauxParEntite[$entiteId]['sieges_femmes'] += $siegeFemme[$entiteId] ?? 0;
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'resultats_par_circo' => $resultatsParCirco,
+                    'sieges_totaux_par_entite' => $siegesTotauxParEntite,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('ResultatController@repartirSieges:', [
+                'error' => $e->getMessage(),
+                'line' => $e->getLine(),
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Résultat non trouvé',
-            ], 404);
+                'message' => 'Erreur lors de la répartition des sièges',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 500);
         }
-
-        // Récupérer l'historique depuis la table resultats_historique
-        $historique = DB::table('resultats_historique')
-            ->where('resultat_id', $resultatId)
-            ->orderBy('created_at', 'desc')
-            ->get();
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'resultat_actuel' => $resultat,
-                'historique' => $historique,
-                'nb_modifications' => $historique->count(),
-            ],
-        ]);
-    }
-
-    /**
-     * Supprimer tous les résultats d'un PV pour une version donnée
-     * 
-     * DELETE /api/v1/resultats/pv/{pvId}/version/{version}
-     * 
-     * @OA\Delete(
-     *     path="/resultats/pv/{pvId}/version/{version}",
-     *     tags={"Résultats"},
-     *     summary="Supprimer une version de saisie",
-     *     description="Supprime tous les résultats d'une version spécifique d'un PV",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="pvId",
-     *         in="path",
-     *         description="ID du procès-verbal",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Parameter(
-     *         name="version",
-     *         in="path",
-     *         description="Numéro de la version à supprimer",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=2)
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Version supprimée avec succès",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="Résultats de la version 2 supprimés avec succès"),
-     *             @OA\Property(property="nb_supprimes", type="integer", example=8)
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="PV non trouvé ou aucun résultat pour cette version"),
-     *     @OA\Response(response=401, description="Non authentifié")
-     * )
-     */
-    public function supprimerVersion(int $pvId, int $version): JsonResponse
-    {
-        $pv = DB::table('proces_verbaux')->where('id', $pvId)->first();
-
-        if (!$pv) {
-            return response()->json([
-                'success' => false,
-                'message' => 'PV non trouvé',
-            ], 404);
-        }
-
-        // Supprimer les résultats de cette version
-        $deleted = DB::table('resultats')
-            ->where('proces_verbal_id', $pvId)
-            ->where('version', $version)
-            ->delete();
-
-        if ($deleted === 0) {
-            return response()->json([
-                'success' => false,
-                'message' => "Aucun résultat trouvé pour la version $version",
-            ], 404);
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => "Résultats de la version $version supprimés avec succès",
-            'nb_supprimes' => $deleted,
-        ]);
-    }
-
-    /**
-     * Obtenir les résultats d'un PV (toutes versions)
-     * 
-     * GET /api/v1/resultats/pv/{pvId}
-     * 
-     * @OA\Get(
-     *     path="/resultats/pv/{pvId}",
-     *     tags={"Résultats"},
-     *     summary="Résultats d'un PV",
-     *     description="Retourne tous les résultats d'un PV avec toutes les versions",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="pvId",
-     *         in="path",
-     *         description="ID du procès-verbal",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Résultats du PV",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="pv", type="object", description="Informations du PV"),
-     *                 @OA\Property(
-     *                     property="resultats",
-     *                     type="array",
-     *                     @OA\Items(
-     *                         type="object",
-     *                         @OA\Property(property="id", type="integer"),
-     *                         @OA\Property(property="version", type="integer"),
-     *                         @OA\Property(property="numero_liste", type="integer"),
-     *                         @OA\Property(property="entite", type="string"),
-     *                         @OA\Property(property="sigle", type="string"),
-     *                         @OA\Property(property="nombre_voix", type="integer"),
-     *                         @OA\Property(property="date_saisie", type="string", format="date-time"),
-     *                         @OA\Property(property="operateur_user_id", type="integer", nullable=true)
-     *                     )
-     *                 ),
-     *                 @OA\Property(property="count", type="integer", example=16, description="Nombre total de résultats (toutes versions)")
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="PV non trouvé"),
-     *     @OA\Response(response=401, description="Non authentifié")
-     * )
-     */
-    public function getResultatsPv(int $pvId): JsonResponse
-    {
-        $pv = DB::table('proces_verbaux')->where('id', $pvId)->first();
-
-        if (!$pv) {
-            return response()->json([
-                'success' => false,
-                'message' => 'PV non trouvé',
-            ], 404);
-        }
-
-        $resultats = DB::table('resultats as r')
-            ->join('candidatures as c', 'r.candidature_id', '=', 'c.id')
-            ->join('entites_politiques as ep', 'c.entite_politique_id', '=', 'ep.id')
-            ->where('r.proces_verbal_id', $pvId)
-            ->select(
-                'r.id',
-                'r.version',
-                'c.numero_liste',
-                'ep.nom as entite',
-                'ep.sigle',
-                'r.nombre_voix',
-                'r.date_saisie',
-                'r.operateur_user_id'
-            )
-            ->orderBy('r.version')
-            ->orderBy('c.numero_liste')
-            ->get();
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'pv' => $pv,
-                'resultats' => $resultats,
-                'count' => $resultats->count(),
-            ],
-        ]);
     }
 }

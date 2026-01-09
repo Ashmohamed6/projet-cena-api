@@ -8,97 +8,59 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
- * IncidentController
- * 
- * Gestion des incidents et anomalies signalés pendant le processus électoral
- * 
- * @package App\Http\Controllers\Api
- * @version 1.0
+ * @OA\Tag(
+ * name="Incidents",
+ * description="Gestion des incidents et anomalies signalés pendant le processus électoral"
+ * )
  */
 class IncidentController extends Controller
 {
     /**
-     * Liste des incidents avec filtres optionnels
-     * 
-     * GET /api/v1/incidents
-     * 
      * @OA\Get(
-     *     path="/incidents",
-     *     tags={"Incidents"},
-     *     summary="Liste des incidents",
-     *     description="Retourne la liste des incidents avec filtres optionnels (statut, gravité, type, élection, niveau)",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="statut",
-     *         in="query",
-     *         description="Filtrer par statut",
-     *         required=false,
-     *         @OA\Schema(type="string", enum={"ouvert", "en_cours", "resolu", "rejete", "transmis"}, example="ouvert")
-     *     ),
-     *     @OA\Parameter(
-     *         name="gravite",
-     *         in="query",
-     *         description="Filtrer par gravité",
-     *         required=false,
-     *         @OA\Schema(type="string", enum={"faible", "moyenne", "grave", "critique"}, example="grave")
-     *     ),
-     *     @OA\Parameter(
-     *         name="type",
-     *         in="query",
-     *         description="Filtrer par type",
-     *         required=false,
-     *         @OA\Schema(type="string", enum={"irregularite", "fraude", "violence", "dysfonctionnement", "autre"}, example="fraude")
-     *     ),
-     *     @OA\Parameter(
-     *         name="election_id",
-     *         in="query",
-     *         description="Filtrer par élection",
-     *         required=false,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Parameter(
-     *         name="niveau",
-     *         in="query",
-     *         description="Filtrer par niveau géographique",
-     *         required=false,
-     *         @OA\Schema(type="string", enum={"bureau", "arrondissement", "commune", "circonscription", "national"}, example="bureau")
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Liste des incidents",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="array",
-     *                 @OA\Items(
-     *                     type="object",
-     *                     @OA\Property(property="id", type="integer", example=1),
-     *                     @OA\Property(property="code", type="string", example="INC-675F8A2B"),
-     *                     @OA\Property(property="type", type="string", example="fraude"),
-     *                     @OA\Property(property="gravite", type="string", example="grave"),
-     *                     @OA\Property(property="statut", type="string", example="ouvert"),
-     *                     @OA\Property(property="description", type="string"),
-     *                     @OA\Property(property="niveau", type="string", example="bureau"),
-     *                     @OA\Property(property="niveau_id", type="integer", example=1),
-     *                     @OA\Property(property="election", type="string", example="Élections Législatives 2026"),
-     *                     @OA\Property(property="pv_numero", type="string", nullable=true)
-     *                 )
-     *             ),
-     *             @OA\Property(property="count", type="integer", example=15)
-     *         )
-     *     ),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/incidents",
+     * operationId="getIncidentsList",
+     * tags={"Incidents"},
+     * summary="Liste des incidents",
+     * description="Retourne la liste des incidents avec filtres optionnels",
+     * @OA\Parameter(
+     * name="statut",
+     * in="query",
+     * description="Filtrer par statut",
+     * required=false,
+     * @OA\Schema(type="string", enum={"ouvert", "en_cours", "resolu", "rejete", "transmis"})
+     * ),
+     * @OA\Parameter(
+     * name="gravite",
+     * in="query",
+     * description="Filtrer par gravité",
+     * required=false,
+     * @OA\Schema(type="string", enum={"faible", "moyenne", "grave", "critique"})
+     * ),
+     * @OA\Parameter(
+     * name="type",
+     * in="query",
+     * description="Filtrer par type",
+     * required=false,
+     * @OA\Schema(type="string", enum={"irregularite", "fraude", "violence", "dysfonctionnement", "autre"})
+     * ),
+     * @OA\Parameter(name="election_id", in="query", description="Filtrer par élection", @OA\Schema(type="integer")),
+     * @OA\Parameter(
+     * name="niveau",
+     * in="query",
+     * description="Filtrer par niveau géographique",
+     * required=false,
+     * @OA\Schema(type="string", enum={"bureau", "arrondissement", "commune", "circonscription", "national"})
+     * ),
+     * @OA\Response(
+     * response=200,
+     * description="Liste des incidents",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="data", type="array", @OA\Items(type="object")),
+     * @OA\Property(property="count", type="integer")
      * )
-     * 
-     * Filtres disponibles:
-     * - statut: ouvert, en_traitement, resolu, clos
-     * - gravite: faible, moyenne, elevee, critique
-     * - type: type de l'incident
-     * - election_id: ID de l'élection
-     * 
-     * @param Request $request
-     * @return JsonResponse
+     * )
+     * )
      */
     public function index(Request $request): JsonResponse
     {
@@ -157,77 +119,39 @@ class IncidentController extends Controller
     }
 
     /**
-     * Créer un nouvel incident
-     * 
-     * POST /api/v1/incidents
-     * 
      * @OA\Post(
-     *     path="/incidents",
-     *     tags={"Incidents"},
-     *     summary="Créer un incident",
-     *     description="Enregistre un nouvel incident ou anomalie signalé pendant le processus électoral",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\RequestBody(
-     *         required=true,
-     *         @OA\JsonContent(
-     *             required={"election_id","type","description"},
-     *             @OA\Property(property="code", type="string", maxLength=50, example="INC-001", description="Code unique (auto-généré si non fourni)"),
-     *             @OA\Property(property="election_id", type="integer", example=1, description="ID de l'élection concernée"),
-     *             @OA\Property(property="proces_verbal_id", type="integer", nullable=true, example=1, description="ID du PV concerné (optionnel)"),
-     *             @OA\Property(
-     *                 property="type",
-     *                 type="string",
-     *                 enum={"irregularite", "fraude", "violence", "dysfonctionnement", "autre"},
-     *                 example="fraude",
-     *                 description="Type d'incident"
-     *             ),
-     *             @OA\Property(
-     *                 property="gravite",
-     *                 type="string",
-     *                 enum={"faible", "moyenne", "grave", "critique"},
-     *                 example="grave",
-     *                 description="Niveau de gravité"
-     *             ),
-     *             @OA\Property(
-     *                 property="niveau",
-     *                 type="string",
-     *                 enum={"bureau", "arrondissement", "commune", "circonscription", "national"},
-     *                 example="bureau",
-     *                 description="Niveau géographique"
-     *             ),
-     *             @OA\Property(property="niveau_id", type="integer", nullable=true, example=1, description="ID de l'entité géographique"),
-     *             @OA\Property(property="description", type="string", example="Tentative d'intimidation d'électeurs constatée au bureau de vote BV-001"),
-     *             @OA\Property(
-     *                 property="pieces_jointes",
-     *                 type="array",
-     *                 @OA\Items(type="string"),
-     *                 example={"photo1.jpg", "rapport.pdf"},
-     *                 description="Liste des pièces jointes"
-     *             ),
-     *             @OA\Property(property="rapporte_par_user_id", type="integer", example=1, description="ID de l'utilisateur rapportant l'incident")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=201,
-     *         description="Incident créé avec succès",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="Incident créé avec succès"),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="id", type="integer", example=1),
-     *                 @OA\Property(property="code", type="string", example="INC-675F8A2B"),
-     *                 @OA\Property(property="statut", type="string", example="ouvert")
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(response=422, description="Erreur de validation"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/incidents",
+     * operationId="storeIncident",
+     * tags={"Incidents"},
+     * summary="Créer un incident",
+     * description="Enregistre un nouvel incident ou anomalie",
+     * @OA\RequestBody(
+     * required=true,
+     * @OA\JsonContent(
+     * required={"election_id", "type", "description"},
+     * @OA\Property(property="code", type="string", example="INC-001"),
+     * @OA\Property(property="election_id", type="integer", example=1),
+     * @OA\Property(property="proces_verbal_id", type="integer", nullable=true),
+     * @OA\Property(property="type", type="string", enum={"irregularite", "fraude", "violence", "dysfonctionnement", "autre"}),
+     * @OA\Property(property="gravite", type="string", enum={"faible", "moyenne", "grave", "critique"}),
+     * @OA\Property(property="niveau", type="string", enum={"bureau", "arrondissement", "commune", "circonscription", "national"}),
+     * @OA\Property(property="niveau_id", type="integer", nullable=true),
+     * @OA\Property(property="description", type="string"),
+     * @OA\Property(property="pieces_jointes", type="array", @OA\Items(type="string")),
+     * @OA\Property(property="rapporte_par_user_id", type="integer")
      * )
-     * 
-     * @param Request $request
-     * @return JsonResponse
+     * ),
+     * @OA\Response(
+     * response=201,
+     * description="Incident créé avec succès",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="message", type="string"),
+     * @OA\Property(property="data", type="object")
+     * )
+     * ),
+     * @OA\Response(response=422, description="Erreur de validation")
+     * )
      */
     public function store(Request $request): JsonResponse
     {
@@ -276,53 +200,22 @@ class IncidentController extends Controller
     }
 
     /**
-     * Détail d'un incident
-     * 
-     * GET /api/v1/incidents/{id}
-     * 
      * @OA\Get(
-     *     path="/incidents/{id}",
-     *     tags={"Incidents"},
-     *     summary="Détail d'un incident",
-     *     description="Retourne les informations complètes d'un incident avec les utilisateurs ayant rapporté et traité l'incident",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="id",
-     *         in="path",
-     *         description="ID de l'incident",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Détails de l'incident",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="id", type="integer", example=1),
-     *                 @OA\Property(property="code", type="string", example="INC-675F8A2B"),
-     *                 @OA\Property(property="type", type="string", example="fraude"),
-     *                 @OA\Property(property="gravite", type="string", example="grave"),
-     *                 @OA\Property(property="statut", type="string", example="resolu"),
-     *                 @OA\Property(property="description", type="string"),
-     *                 @OA\Property(property="resolution", type="string", nullable=true),
-     *                 @OA\Property(property="election", type="string", example="Élections Législatives 2026"),
-     *                 @OA\Property(property="pv_numero", type="string", nullable=true),
-     *                 @OA\Property(property="rapporte_par", type="string", example="Jean Dupont"),
-     *                 @OA\Property(property="traite_par", type="string", example="Marie Martin"),
-     *                 @OA\Property(property="date_resolution", type="string", format="date-time", nullable=true),
-     *                 @OA\Property(property="pieces_jointes", type="array", @OA\Items(type="string"))
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="Incident non trouvé"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/incidents/{id}",
+     * operationId="getIncidentById",
+     * tags={"Incidents"},
+     * summary="Détail d'un incident",
+     * @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     * @OA\Response(
+     * response=200,
+     * description="Détails de l'incident",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="data", type="object")
      * )
-     * 
-     * @param int $id
-     * @return JsonResponse
+     * ),
+     * @OA\Response(response=404, description="Incident non trouvé")
+     * )
      */
     public function show(int $id): JsonResponse
     {
@@ -361,54 +254,34 @@ class IncidentController extends Controller
     }
 
     /**
-     * Mettre à jour un incident
-     * 
-     * PUT /api/v1/incidents/{id}
-     * 
      * @OA\Put(
-     *     path="/incidents/{id}",
-     *     tags={"Incidents"},
-     *     summary="Mettre à jour un incident",
-     *     description="Modifie les informations d'un incident existant",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="id",
-     *         in="path",
-     *         description="ID de l'incident",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\RequestBody(
-     *         required=true,
-     *         @OA\JsonContent(
-     *             @OA\Property(property="type", type="string", enum={"irregularite", "fraude", "violence", "dysfonctionnement", "autre"}),
-     *             @OA\Property(property="description", type="string"),
-     *             @OA\Property(property="gravite", type="string", enum={"faible", "moyenne", "grave", "critique"}),
-     *             @OA\Property(property="statut", type="string", enum={"ouvert", "en_cours", "resolu", "rejete", "transmis"}),
-     *             @OA\Property(property="niveau", type="string", enum={"bureau", "arrondissement", "commune", "circonscription", "national"}),
-     *             @OA\Property(property="niveau_id", type="integer"),
-     *             @OA\Property(property="resolution", type="string"),
-     *             @OA\Property(property="pieces_jointes", type="array", @OA\Items(type="string")),
-     *             @OA\Property(property="traite_par_user_id", type="integer")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Incident mis à jour avec succès",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="Incident mis à jour avec succès"),
-     *             @OA\Property(property="data", type="object")
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="Incident non trouvé"),
-     *     @OA\Response(response=422, description="Erreur de validation"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/incidents/{id}",
+     * operationId="updateIncident",
+     * tags={"Incidents"},
+     * summary="Mettre à jour un incident",
+     * @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     * @OA\RequestBody(
+     * required=true,
+     * @OA\JsonContent(
+     * @OA\Property(property="type", type="string", enum={"irregularite", "fraude", "violence", "dysfonctionnement", "autre"}),
+     * @OA\Property(property="description", type="string"),
+     * @OA\Property(property="gravite", type="string", enum={"faible", "moyenne", "grave", "critique"}),
+     * @OA\Property(property="statut", type="string", enum={"ouvert", "en_cours", "resolu", "rejete", "transmis"}),
+     * @OA\Property(property="niveau", type="string", enum={"bureau", "arrondissement", "commune", "circonscription", "national"}),
+     * @OA\Property(property="pieces_jointes", type="array", @OA\Items(type="string"))
      * )
-     * 
-     * @param Request $request
-     * @param int $id
-     * @return JsonResponse
+     * ),
+     * @OA\Response(
+     * response=200,
+     * description="Incident mis à jour",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="message", type="string"),
+     * @OA\Property(property="data", type="object")
+     * )
+     * ),
+     * @OA\Response(response=404, description="Non trouvé")
+     * )
      */
     public function update(Request $request, int $id): JsonResponse
     {
@@ -457,37 +330,21 @@ class IncidentController extends Controller
     }
 
     /**
-     * Supprimer un incident
-     * 
-     * DELETE /api/v1/incidents/{id}
-     * 
      * @OA\Delete(
-     *     path="/incidents/{id}",
-     *     tags={"Incidents"},
-     *     summary="Supprimer un incident",
-     *     description="Supprime définitivement un incident du système",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="id",
-     *         in="path",
-     *         description="ID de l'incident",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Incident supprimé avec succès",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="Incident supprimé avec succès")
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="Incident non trouvé"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/incidents/{id}",
+     * operationId="deleteIncident",
+     * tags={"Incidents"},
+     * summary="Supprimer un incident",
+     * @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     * @OA\Response(
+     * response=200,
+     * description="Succès",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="message", type="string")
      * )
-     * 
-     * @param int $id
-     * @return JsonResponse
+     * )
+     * )
      */
     public function destroy(int $id): JsonResponse
     {
@@ -509,60 +366,30 @@ class IncidentController extends Controller
     }
 
     /**
-     * Marquer un incident comme "en traitement"
-     * 
-     * POST /api/v1/incidents/{id}/traiter
-     * 
      * @OA\Post(
-     *     path="/incidents/{id}/traiter",
-     *     tags={"Incidents"},
-     *     summary="Prendre en charge un incident",
-     *     description="Change le statut d'un incident à 'en_cours' et assigne un responsable du traitement",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="id",
-     *         in="path",
-     *         description="ID de l'incident",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\RequestBody(
-     *         required=true,
-     *         @OA\JsonContent(
-     *             required={"traite_par_user_id"},
-     *             @OA\Property(property="traite_par_user_id", type="integer", example=1, description="ID de l'utilisateur prenant en charge l'incident")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Incident pris en charge avec succès",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="Incident pris en charge avec succès"),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="id", type="integer", example=1),
-     *                 @OA\Property(property="statut", type="string", example="en_cours"),
-     *                 @OA\Property(property="traite_par_user_id", type="integer", example=1)
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=400,
-     *         description="Incident déjà traité",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=false),
-     *             @OA\Property(property="message", type="string", example="Cet incident est déjà résolu, rejeté ou transmis")
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="Incident non trouvé"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/incidents/{id}/traiter",
+     * operationId="traiterIncident",
+     * tags={"Incidents"},
+     * summary="Prendre en charge un incident",
+     * description="Passe le statut à 'en_cours'",
+     * @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     * @OA\RequestBody(
+     * required=true,
+     * @OA\JsonContent(
+     * required={"traite_par_user_id"},
+     * @OA\Property(property="traite_par_user_id", type="integer")
      * )
-     * 
-     * @param Request $request
-     * @param int $id
-     * @return JsonResponse
+     * ),
+     * @OA\Response(
+     * response=200,
+     * description="Pris en charge",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="message", type="string")
+     * )
+     * ),
+     * @OA\Response(response=400, description="Déjà traité")
+     * )
      */
     public function traiter(Request $request, int $id): JsonResponse
     {
@@ -579,7 +406,7 @@ class IncidentController extends Controller
             ], 404);
         }
 
-        if ($incident->statut === 'resolu' || $incident->statut === 'rejete' || $incident->statut === 'transmis') {
+        if (in_array($incident->statut, ['resolu', 'rejete', 'transmis'])) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cet incident est déjà résolu, rejeté ou transmis',
@@ -602,68 +429,30 @@ class IncidentController extends Controller
     }
 
     /**
-     * Résoudre un incident
-     * 
-     * POST /api/v1/incidents/{id}/resoudre
-     * 
      * @OA\Post(
-     *     path="/incidents/{id}/resoudre",
-     *     tags={"Incidents"},
-     *     summary="Résoudre un incident",
-     *     description="Marque un incident comme résolu avec une description de la résolution et enregistre la date de résolution",
-     *     security={{"bearerAuth":{}}},
-     *     @OA\Parameter(
-     *         name="id",
-     *         in="path",
-     *         description="ID de l'incident",
-     *         required=true,
-     *         @OA\Schema(type="integer", example=1)
-     *     ),
-     *     @OA\RequestBody(
-     *         required=true,
-     *         @OA\JsonContent(
-     *             required={"resolution"},
-     *             @OA\Property(
-     *                 property="resolution",
-     *                 type="string",
-     *                 example="L'incident a été vérifié et les mesures correctives ont été prises. Les électeurs ont pu voter dans des conditions normales.",
-     *                 description="Description de la résolution de l'incident"
-     *             ),
-     *             @OA\Property(property="traite_par_user_id", type="integer", example=1, description="ID de l'utilisateur résolvant l'incident")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="Incident résolu avec succès",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="Incident résolu avec succès"),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="id", type="integer", example=1),
-     *                 @OA\Property(property="statut", type="string", example="resolu"),
-     *                 @OA\Property(property="resolution", type="string"),
-     *                 @OA\Property(property="date_resolution", type="string", format="date-time")
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=400,
-     *         description="Incident déjà traité",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="success", type="boolean", example=false),
-     *             @OA\Property(property="message", type="string", example="Cet incident est déjà résolu, rejeté ou transmis")
-     *         )
-     *     ),
-     *     @OA\Response(response=404, description="Incident non trouvé"),
-     *     @OA\Response(response=422, description="Résolution requise"),
-     *     @OA\Response(response=401, description="Non authentifié")
+     * path="/api/v1/incidents/{id}/resoudre",
+     * operationId="resoudreIncident",
+     * tags={"Incidents"},
+     * summary="Résoudre un incident",
+     * description="Clôture l'incident avec une explication",
+     * @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     * @OA\RequestBody(
+     * required=true,
+     * @OA\JsonContent(
+     * required={"resolution"},
+     * @OA\Property(property="resolution", type="string"),
+     * @OA\Property(property="traite_par_user_id", type="integer")
      * )
-     * 
-     * @param Request $request
-     * @param int $id
-     * @return JsonResponse
+     * ),
+     * @OA\Response(
+     * response=200,
+     * description="Incident résolu",
+     * @OA\JsonContent(
+     * @OA\Property(property="success", type="boolean", example=true),
+     * @OA\Property(property="message", type="string")
+     * )
+     * )
+     * )
      */
     public function resoudre(Request $request, int $id): JsonResponse
     {
@@ -681,7 +470,7 @@ class IncidentController extends Controller
             ], 404);
         }
 
-        if ($incident->statut === 'resolu' || $incident->statut === 'rejete' || $incident->statut === 'transmis') {
+        if (in_array($incident->statut, ['resolu', 'rejete', 'transmis'])) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cet incident est déjà résolu, rejeté ou transmis',

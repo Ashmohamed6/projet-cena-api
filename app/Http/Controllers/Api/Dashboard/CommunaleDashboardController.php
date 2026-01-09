@@ -3,119 +3,54 @@
 namespace App\Http\Controllers\Api\Dashboard;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
+use Illuminate\Http\{Request, JsonResponse};
 use App\Services\Dashboard\CommunaleDashboardService;
 
 class CommunaleDashboardController extends Controller
 {
     public function __construct(private CommunaleDashboardService $dashboardService) {}
 
-    /**
-     * ✅ Récupère l'ID d'élection active depuis request->attributes
-     */
     private function electionId(Request $request): int
     {
-        return (int) ($request->attributes->get('active_election_id') ?? 0);
+        return (int) ($request->attributes->get('active_election_id') 
+            ?? $request->header('X-Election-Id') 
+            ?? $request->input('election_id') 
+            ?? 0);
     }
 
-    public function stats(Request $request)
+    public function stats(Request $request): JsonResponse
     {
         $electionId = $this->electionId($request);
-
         return response()->json([
             'success' => true,
             'data' => $this->dashboardService->getStats($electionId),
         ]);
     }
 
-    public function resultats(Request $request)
+    public function participation(Request $request): JsonResponse
     {
         $electionId = $this->electionId($request);
+        return response()->json([
+            'success' => true,
+            'data' => $this->dashboardService->getParticipation($electionId),
+        ]);
+    }
 
+    public function resultats(Request $request): JsonResponse
+    {
+        $electionId = $this->electionId($request);
         return response()->json([
             'success' => true,
             'data' => $this->dashboardService->getResultats($electionId),
         ]);
     }
 
-    public function resultatCommune(Request $request, int $communeId)
+    public function progression(Request $request): JsonResponse
     {
         $electionId = $this->electionId($request);
-
-        return response()->json([
-            'success' => true,
-            'data' => $this->dashboardService->getResultatCommune($electionId, $communeId),
-        ]);
-    }
-
-    /**
-     * GET /dashboard/communale/participation
-     * ✅ ALIAS pour tauxParticipation
-     */
-    public function participation(Request $request)
-    {
-        return $this->tauxParticipation($request);
-    }
-
-    public function tauxParticipation(Request $request)
-    {
-        $electionId = $this->electionId($request);
-
-        return response()->json([
-            'success' => true,
-            'data' => $this->dashboardService->getTauxParticipation($electionId),
-        ]);
-    }
-
-    public function progression(Request $request)
-    {
-        $electionId = $this->electionId($request);
-
         return response()->json([
             'success' => true,
             'data' => $this->dashboardService->getProgression($electionId),
-        ]);
-    }
-
-    public function historique(Request $request)
-    {
-        $electionId = $this->electionId($request);
-
-        return response()->json([
-            'success' => true,
-            'data' => $this->dashboardService->getHistorique($electionId),
-        ]);
-    }
-
-    public function cartographie(Request $request)
-    {
-        $electionId = $this->electionId($request);
-
-        return response()->json([
-            'success' => true,
-            'data' => $this->dashboardService->getCartographie($electionId),
-        ]);
-    }
-
-    public function incidents(Request $request)
-    {
-        $electionId = $this->electionId($request);
-
-        $historique = $this->dashboardService->getHistorique($electionId);
-
-        return response()->json([
-            'success' => true,
-            'data' => $historique['incidents'] ?? [],
-        ]);
-    }
-
-    public function audit(Request $request)
-    {
-        $electionId = $this->electionId($request);
-
-        return response()->json([
-            'success' => true,
-            'data' => $this->dashboardService->getHistorique($electionId),
         ]);
     }
 }
