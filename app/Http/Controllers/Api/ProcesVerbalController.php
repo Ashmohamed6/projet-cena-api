@@ -414,41 +414,159 @@ class ProcesVerbalController extends Controller
      * @OA\Response(response=404, description="PV non trouvé")
      * )
      */
-    public function show(int $id): JsonResponse
-    {
-        try {
-            // ✅ Charger toutes les relations y compris arrondissement
-            $pv = ProcesVerbal::with([
+  public function show(string $id): JsonResponse
+{
+    try {
+        // ✅ Cherche par ID OU par CODE (évite les "PV introuvable" si on navigue avec le code)
+        $pv = ProcesVerbal::query()
+            ->with([
                 'election',
-                'lignes' => function($q) {
-                    $q->orderBy('ordre');
-                },
-                'lignes.arrondissement',
-                'lignes.villageQuartier',
-                'lignes.centreVote',
-                'lignes.posteVote',
+                'saisiPar:id,nom,prenom',
+                'validePar:id,nom,prenom',
+
+                // lignes + geo
+                'lignes.villageQuartier.arrondissement.commune.departement',
+                'lignes.arrondissement.commune.departement',
+                'lignes.centreVote.villageQuartier.arrondissement.commune.departement',
+                'lignes.posteVote.centreVote.villageQuartier.arrondissement.commune.departement',
+
+                // résultats par ligne
                 'lignes.resultats.candidature.entitePolitique',
-                'saisiPar:id,name,email',
-                'validePar:id,name,email',
-            ])->findOrFail($id);
+            ])
+            ->where('id', $id)
+            ->orWhere('code', $id)
+            ->first();
 
-            // Ajouter les informations de localisation
-            $localisation = $this->getLocalisationComplete($pv->niveau, $pv->niveau_id);
-
-            return response()->json([
-                'success' => true,
-                'data' => array_merge($pv->toArray(), [
-                    'localisation' => $localisation,
-                ]),
-            ]);
-        } catch (\Exception $e) {
+        if (!$pv) {
             return response()->json([
                 'success' => false,
                 'message' => 'PV non trouvé',
-                'error' => $e->getMessage(),
+                'data' => null,
             ], 404);
         }
+
+        // ✅ Lignes (format compatible avec ta page détail actuelle)
+        $lignes = $pv->lignes->map(function ($ligne) {
+            $localisation =
+                $ligne->villageQuartier?->nom
+                ?? $ligne->posteVote?->nom
+                ?? $ligne->centreVote?->nom
+                ?? $ligne->arrondissement?->nom
+                ?? ($ligne->nom_localisation ?? 'N/A');
+
+            $type =
+                $ligne->village_quartier_id ? 'village_quartier' :
+                ($ligne->poste_vote_id ? 'poste_vote' :
+                ($ligne->centre_vote_id ? 'centre_vote' :
+                ($ligne->arrondissement_id ? 'arrondissement' : '')));
+
+            $totalVoix = (int) $ligne->resultats->sum('nombre_voix');
+            $bulletinsNuls = (int) ($ligne->bulletins_nuls ?? 0);
+
+            $resultats = $ligne->resultats->map(function ($r) {
+                $ep = $r->candidature?->entitePolitique;
+
+                return [
+                    'id' => (int) $r->id,
+                    'candidature_id' => (int) $r->candidature_id,
+                    'entite_politique' => $ep?->nom ?? 'N/A',
+                    'sigle' => $ep?->sigle ?? '',
+                    'numero_liste' => $ep?->numero_ordre ?? null,
+                    'nombre_voix' => (int) ($r->nombre_voix ?? 0),
+                ];
+            })->values();
+
+            return [
+                'id' => (int) $ligne->id,
+                'localisation' => $localisation,
+                'type' => $type,
+                'ordre' => (int) ($ligne->ordre ?? 0),
+                'bulletins_nuls' => $bulletinsNuls,
+                'total_voix' => $totalVoix,
+                'total_votants' => $totalVoix + $bulletinsNuls,
+                'nombre_inscrits' => null, // optionnel si tu veux plus tard
+                'resultats' => $resultats,
+            ];
+        })->values();
+
+        // ✅ Résultats globaux (agrégation depuis pv_ligne_resultats = robuste)
+        $globaux = PVLigneResultat::query()
+            ->whereHas('ligne', function ($q) use ($pv) {
+                $q->where('proces_verbal_id', $pv->id);
+            })
+            ->select('candidature_id', DB::raw('SUM(nombre_voix) as nombre_voix'))
+            ->groupBy('candidature_id')
+            ->with(['candidature.entitePolitique'])
+            ->get()
+            ->map(function ($row) {
+                $ep = $row->candidature?->entitePolitique;
+
+                return [
+                    'id' => (int) $row->candidature_id,
+                    'candidature_id' => (int) $row->candidature_id,
+                    'entite_politique' => $ep?->nom ?? 'N/A',
+                    'sigle' => $ep?->sigle ?? '',
+                    'numero_liste' => $ep?->numero_ordre ?? null,
+                    'nombre_voix' => (int) $row->nombre_voix,
+                ];
+            })
+            ->sortByDesc('nombre_voix')
+            ->values();
+
+        // ✅ Localisation (on utilise l’accessor du modèle)
+        $localisation = (string) ($pv->localisation_complete ?? '');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Détails du PV récupérés',
+            'data' => [
+                'pv' => [
+                    'id' => (int) $pv->id,
+                    'code' => $pv->code,
+                    'numero_pv' => $pv->numero_pv,
+                    'niveau' => $pv->niveau,
+                    'niveau_id' => (int) $pv->niveau_id,
+                    'localisation' => $localisation,
+                    'election' => $pv->election?->nom ?? '',
+                    'coordonnateur' => $pv->coordonnateur,
+                    'date_compilation' => $pv->date_compilation,
+                    'statut' => $pv->statut,
+                    'nombre_inscrits' => $pv->nombre_inscrits,
+                    'nombre_votants' => $pv->nombre_votants,
+                    'nombre_bulletins_nuls' => $pv->nombre_bulletins_nuls,
+                    'nombre_suffrages_exprimes' => $pv->nombre_suffrages_exprimes,
+                    'taux_participation' => $pv->taux_participation,
+                    'est_coherent' => $pv->est_coherent,
+                    'observations' => $pv->observations,
+                    'saisi_par' => $pv->saisiPar ? trim($pv->saisiPar->nom . ' ' . $pv->saisiPar->prenom) : null,
+                    'valide_par' => $pv->validePar ? trim($pv->validePar->nom . ' ' . $pv->validePar->prenom) : null,
+                    'date_validation' => $pv->date_validation,
+                    'created_at' => $pv->created_at,
+                    'updated_at' => $pv->updated_at,
+                ],
+                'lignes' => $lignes,
+                'resultats_globaux' => $globaux,
+                'signatures' => [], // (tu pourras brancher plus tard si besoin)
+            ],
+        ]);
+
+    } catch (\Throwable $e) {
+        \Log::error('Erreur ProcesVerbalController@show', [
+            'id' => $id,
+            'message' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Erreur lors de la récupération du PV',
+            'error' => config('app.debug') ? $e->getMessage() : 'Une erreur est survenue',
+        ], 500);
     }
+}
+
+
 
     /**
      * @OA\Put(
@@ -962,4 +1080,107 @@ class ProcesVerbalController extends Controller
                 return "";
         }
     }
+
+    private function getLocalisationPrincipale(ProcesVerbal $pv): array
+{
+    $niveau = $pv->niveau;
+    $id = (int) $pv->niveau_id;
+
+    $loc = [
+        'departement' => null,
+        'commune' => null,
+        'arrondissement' => null,
+        'village_quartier' => null,
+        'centre_vote' => null,
+        'poste_vote' => null,
+        'texte' => '',
+    ];
+
+    if ($id <= 0) return $loc;
+
+    switch ($niveau) {
+        case 'commune':
+            $d = DB::table('communes as c')
+                ->join('departements as d', 'c.departement_id', '=', 'd.id')
+                ->where('c.id', $id)
+                ->select('d.nom as departement', 'c.nom as commune')
+                ->first();
+            if ($d) {
+                $loc['departement'] = $d->departement;
+                $loc['commune'] = $d->commune;
+            }
+            break;
+
+        case 'arrondissement':
+            $d = DB::table('arrondissements as a')
+                ->join('communes as c', 'a.commune_id', '=', 'c.id')
+                ->join('departements as d', 'c.departement_id', '=', 'd.id')
+                ->where('a.id', $id)
+                ->select('d.nom as departement', 'c.nom as commune', 'a.nom as arrondissement')
+                ->first();
+            if ($d) {
+                $loc['departement'] = $d->departement;
+                $loc['commune'] = $d->commune;
+                $loc['arrondissement'] = $d->arrondissement;
+            }
+            break;
+
+        case 'village_quartier':
+            $d = DB::table('villages_quartiers as v')
+                ->join('arrondissements as a', 'v.arrondissement_id', '=', 'a.id')
+                ->join('communes as c', 'a.commune_id', '=', 'c.id')
+                ->join('departements as d', 'c.departement_id', '=', 'd.id')
+                ->where('v.id', $id)
+                ->select('d.nom as departement', 'c.nom as commune', 'a.nom as arrondissement', 'v.nom as village_quartier')
+                ->first();
+            if ($d) {
+                $loc['departement'] = $d->departement;
+                $loc['commune'] = $d->commune;
+                $loc['arrondissement'] = $d->arrondissement;
+                $loc['village_quartier'] = $d->village_quartier;
+            }
+            break;
+
+        case 'bureau': // niveau PV "bureau" => poste de vote
+            $d = DB::table('postes_vote as p')
+                ->leftJoin('centres_vote as cv', 'p.centre_vote_id', '=', 'cv.id')
+                ->leftJoin('villages_quartiers as v', 'cv.village_quartier_id', '=', 'v.id')
+                ->leftJoin('arrondissements as a', 'v.arrondissement_id', '=', 'a.id')
+                ->leftJoin('communes as c', 'a.commune_id', '=', 'c.id')
+                ->leftJoin('departements as d', 'c.departement_id', '=', 'd.id')
+                ->where('p.id', $id)
+                ->select(
+                    'd.nom as departement',
+                    'c.nom as commune',
+                    'a.nom as arrondissement',
+                    'v.nom as village_quartier',
+                    'cv.nom as centre_vote',
+                    DB::raw("COALESCE(p.nom, p.code) as poste_vote")
+                )
+                ->first();
+            if ($d) {
+                $loc['departement'] = $d->departement;
+                $loc['commune'] = $d->commune;
+                $loc['arrondissement'] = $d->arrondissement;
+                $loc['village_quartier'] = $d->village_quartier;
+                $loc['centre_vote'] = $d->centre_vote;
+                $loc['poste_vote'] = $d->poste_vote;
+            }
+            break;
+    }
+
+    $parts = array_filter([
+        $loc['departement'],
+        $loc['commune'],
+        $loc['arrondissement'],
+        $loc['village_quartier'],
+        $loc['centre_vote'],
+        $loc['poste_vote'],
+    ]);
+
+    $loc['texte'] = implode(' → ', $parts);
+
+    return $loc;
+}
+
 }

@@ -121,38 +121,37 @@ Route::prefix('v1')->group(function () {
         Route::post('candidatures/{id}/rejeter', [CandidatureController::class, 'rejeter'])->name('candidatures.rejeter');
         Route::apiResource('candidatures', CandidatureController::class);
 
-        Route::get('/pv/{id}', [ProcesVerbalController::class, 'show']);
-
         // --- PROCÈS-VERBAUX (PV) ---
-        Route::prefix('pv')->name('pv.')->group(function () {
-            
-            // ✅ 1. VÉRIFICATION (NOUVEAU - pour éviter doublons)
-            Route::get('verification/existe', [PVVerificationController::class, 'verifierExistence'])->name('verification.existe');
-            Route::get('verification/entites-utilisees', [PVVerificationController::class, 'getEntitesUtilisees'])->name('verification.entites-utilisees');
-            
-            // 2. VALIDATION (inscrits)
-            Route::get('validation/inscrits/arrondissement/{id}', [PVValidationController::class, 'getInscritsArrondissement'])->name('validation.inscrits.arrondissement');
-            Route::get('validation/inscrits/village-quartier/{id}', [PVValidationController::class, 'getInscritsVillageQuartier'])->name('validation.inscrits.village-quartier');
-            Route::get('validation/inscrits/commune/{id}', [PVValidationController::class, 'getInscritsCommune'])->name('validation.inscrits.commune');
-            Route::get('validation/inscrits/centre-vote/{id}', [PVValidationController::class, 'getInscritsCentreVote'])->name('validation.inscrits.centre-vote');
-            Route::get('validation/check-existant', [PVValidationController::class, 'checkExistant'])->name('validation.check-existant');
+Route::prefix('pv')->name('pv.')->group(function () {
 
-            // 3. Upload
-            Route::post('upload-scan', [ProcesVerbalController::class, 'uploadScan'])->name('upload-scan');
+    // ✅ 1. VÉRIFICATION
+    Route::get('verification/existe', [PVVerificationController::class, 'verifierExistence'])->name('verification.existe');
+    Route::get('verification/entites-utilisees', [PVVerificationController::class, 'getEntitesUtilisees'])->name('verification.entites-utilisees');
 
-            // 4. Actions spécifiques sur un PV ({id})
-            Route::post('{id}/valider', [ProcesVerbalController::class, 'valider'])->name('valider');
-            Route::post('{id}/rejeter', [ProcesVerbalController::class, 'rejeter'])->name('rejeter');
-            Route::post('{id}/marquer-litigieux', [ProcesVerbalController::class, 'marquerLitigieux'])->name('marquer-litigieux');
-            Route::get('{id}/verification', [ProcesVerbalController::class, 'verification'])->name('verification-detail');
+    // 2. VALIDATION (inscrits)
+    Route::get('validation/inscrits/arrondissement/{id}', [PVValidationController::class, 'getInscritsArrondissement'])->name('validation.inscrits.arrondissement');
+    Route::get('validation/inscrits/village-quartier/{id}', [PVValidationController::class, 'getInscritsVillageQuartier'])->name('validation.inscrits.village-quartier');
+    Route::get('validation/inscrits/commune/{id}', [PVValidationController::class, 'getInscritsCommune'])->name('validation.inscrits.commune');
+    Route::get('validation/inscrits/centre-vote/{id}', [PVValidationController::class, 'getInscritsCentreVote'])->name('validation.inscrits.centre-vote');
+    Route::get('validation/check-existant', [PVValidationController::class, 'checkExistant'])->name('validation.check-existant');
 
-            // 5. CRUD Standard
-            Route::get('/', [ProcesVerbalController::class, 'index'])->name('index');
-            Route::post('/', [ProcesVerbalController::class, 'store'])->name('store');
-            Route::get('{id}', [ProcesVerbalController::class, 'show'])->name('show');
-            Route::put('{id}', [ProcesVerbalController::class, 'update'])->name('update');
-            Route::delete('{id}', [ProcesVerbalController::class, 'destroy'])->name('destroy');
-        });
+    // 3. Upload
+    Route::post('upload-scan', [ProcesVerbalController::class, 'uploadScan'])->name('upload-scan');
+
+    // 4. Actions spécifiques sur un PV ({id})
+    Route::post('{id}/valider', [ProcesVerbalController::class, 'valider'])->whereNumber('id')->name('valider');
+    Route::post('{id}/rejeter', [ProcesVerbalController::class, 'rejeter'])->whereNumber('id')->name('rejeter');
+    Route::post('{id}/marquer-litigieux', [ProcesVerbalController::class, 'marquerLitigieux'])->whereNumber('id')->name('marquer-litigieux');
+    Route::get('{id}/verification', [ProcesVerbalController::class, 'verification'])->whereNumber('id')->name('verification-detail');
+
+    // 5. CRUD Standard
+    Route::get('/', [ProcesVerbalController::class, 'index'])->name('index');
+    Route::post('/', [ProcesVerbalController::class, 'store'])->name('store');
+    Route::get('{id}', [ProcesVerbalController::class, 'show'])->whereNumber('id')->name('show');
+    Route::put('{id}', [ProcesVerbalController::class, 'update'])->whereNumber('id')->name('update');
+    Route::delete('{id}', [ProcesVerbalController::class, 'destroy'])->whereNumber('id')->name('destroy');
+});
+
 
         // --- RÉSULTATS ---
         /* Route::prefix('resultats')->name('resultats.')->group(function () {
