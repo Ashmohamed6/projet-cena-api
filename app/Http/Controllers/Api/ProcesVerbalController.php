@@ -289,6 +289,35 @@ class ProcesVerbalController extends Controller
             ], 422);
         }
 
+        // ✅ PATCH BACKEND (ANTI-500) - Validation manuelle des IDs
+        // On s'assure que les IDs sont présents en fonction du type de ligne AVANT la transaction
+        $validated = $validator->validated();
+        $lineErrors = [];
+        
+        foreach (($validated['lignes'] ?? []) as $i => $ligne) {
+            $type = $ligne['type'] ?? null;
+
+            if ($type === 'arrondissement' && empty($ligne['arrondissement_id'])) {
+                $lineErrors["lignes.$i.arrondissement_id"][] = "required";
+            }
+
+            if ($type === 'village_quartier' && empty($ligne['village_quartier_id'])) {
+                $lineErrors["lignes.$i.village_quartier_id"][] = "required";
+            }
+
+            if (in_array($type, ['poste_vote', 'bureau'], true) && empty($ligne['poste_vote_id'])) {
+                $lineErrors["lignes.$i.poste_vote_id"][] = "required";
+            }
+        }
+
+        if (!empty($lineErrors)) {
+            return response()->json([
+                "success" => false,
+                "message" => "Erreurs de validation",
+                "errors" => $lineErrors,
+            ], 422);
+        }
+
         DB::beginTransaction();
 
         try {
